@@ -21,19 +21,26 @@ Outside the context, `result` is a [Dask Future](https://docs.dask.org/en/latest
 
 By default, only the last assignment is saved.  One can specify which variables to save:
 ```python
-with afar.run("a", "b"), remotely:
-    a = 1
-    b = a + 1
+with afar.run("one", "two"), remotely:
+    one = 1
+    two = one + 1
 ```
-`a` and `b` are now both Futures.  They can be used directly in other `afar.run` contexts:
+`one` and `two` are now both Futures.  They can be used directly in other `afar.run` contexts:
 ```python
 with afar.run as data, remotely:
-    c = a + b
+    three = one + two
 
-assert c.result() == 3
-assert data["c"].result() == 3
+assert three.result() == 3
+assert data["three"].result() == 3
 ```
 `data` is a dictionary of variable names to Futures.  It may be necessary at times to get the data from here.
+
+If you want to automatically gather the data locally (to avoid calling `.result()`), use `afar.get` instead of `afar.run`:
+```python
+with afar.get, remotely:
+    five = two + three
+assert five == 5
+```
 
 ### Is this a good idea?
 

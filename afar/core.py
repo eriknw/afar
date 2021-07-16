@@ -41,6 +41,8 @@ locally = Where("locally")
 
 
 class Run:
+    _gather_data = False
+
     def __init__(self, *names):
         self.names = names
         self._results = None
@@ -51,7 +53,7 @@ class Run:
         self._with_lineno = None
 
     def __call__(self, *names):
-        return Run(*names)
+        return type(self)(*names)
 
     def __enter__(self):
         self._frame = inspect.currentframe().f_back
@@ -149,8 +151,16 @@ class Run:
             remote_dict = client.submit(
                 run_on_worker, self._scoped, names, futures, **submit_kwargs
             )
-            for name in names:
-                self._results[name] = client.submit(getitem, remote_dict, name, **submit_kwargs)
+            if self._gather_data:
+                futures_to_name = {
+                    client.submit(getitem, remote_dict, name, **submit_kwargs): name
+                    for name in names
+                }
+                for future, result in distributed.as_completed(futures_to_name, with_results=True):
+                    self._results[futures_to_name[future]] = result
+            else:
+                for name in names:
+                    self._results[name] = client.submit(getitem, remote_dict, name, **submit_kwargs)
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
@@ -163,6 +173,12 @@ class Run:
         return True
 
 
+class Get(Run):
+    """Unlike ``run``, ``get`` automatically gathers the data locally"""
+
+    _gather_data = True
+
+
 def run_on_worker(sfunc, names, futures):
     sfunc = sfunc.bind(futures)
     results = sfunc()
@@ -170,3 +186,4 @@ def run_on_worker(sfunc, names, futures):
 
 
 run = Run()
+get = Get()

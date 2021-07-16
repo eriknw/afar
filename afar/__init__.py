@@ -1,4 +1,4 @@
-from .core import run, remotely, locally  # noqa
+from .core import run, get, remotely, locally  # noqa
 
 from ._version import get_versions
 
