@@ -8,25 +8,33 @@
 > _Robert A. Heinlein_
 <hr>
 
-`afar` explores new syntax around context managers.  For example:
+`afar` allows you to run code on a remote [Dask](https://dask.org/) [worker](https://distributed.dask.org/en/latest/) using context managers.  For example:
 ```python
 import afar
-with afar.run() as results, locally:
-    x = 1
-    y = x + 1
 
->>> results.x
-1
->>> results.y
-2
-```
-Soon, we will be able to run code on a remote [dask](https://dask.org/) worker with syntax like:
-```python
-with afar.run() as result, remotely:
+with afar.run, remotely:
     import dask_cudf
     df = dask_cudf.read_parquet("s3://...")
     result = df.sum().compute()
 ```
+`result` is a [Dask Future](https://docs.dask.org/en/latest/futures.html) whose data resides on a worker.  `result.result()` is necessary to copy the data locally.
+
+By default, only the last assignment is saved.  One can specify which variables to save:
+```python
+with afar.run("a", "b"), remotely:
+    a = 1
+    b = a + 1
+```
+`a` and `b` are now both Futures.  They can be used directly in other `afar.run` contexts:
+```python
+with afar.run as data, remotely:
+    c = a + b
+
+assert c.result() == 3
+assert data["c"].result() == 3
+```
+`data` is a dictionary of variable names to Futures.  It may be necessary at times to get the data from here.
+
 For motivation, see https://github.com/dask/distributed/issues/4003
 
 ### *This code is highly experimental and magical!*

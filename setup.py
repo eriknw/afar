@@ -18,7 +18,7 @@ setup(
     license="BSD",
     python_requires=">=3.7",
     setup_requires=[],
-    install_requires=["innerscope"],
+    install_requires=["innerscope", "distributed"],
     tests_require=["pytest"],
     include_package_data=True,
     classifiers=[

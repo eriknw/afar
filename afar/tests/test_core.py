@@ -4,10 +4,11 @@ from pytest import raises
 
 
 def test_a_modest_beginning():
-    with afar.run(), remotely:
-        pass
+    with afar.run(), locally:
+        x = 1
+        y = x + 1
 
-    with afar.run(), afar.remotely:
+    with afar.run(), afar.locally:
         pass
 
     with afar.run(), locally:
@@ -16,8 +17,8 @@ def test_a_modest_beginning():
     with afar.run(), afar.locally:
         pass
 
-    with raises(NameError, match="remotelyblah"):
-        with afar.run(), remotelyblah:
+    with raises(NameError, match="locallyblah"):
+        with afar.run(), locallyblah:
             pass
 
     with afar.run():
@@ -36,16 +37,17 @@ def test_temporary_assignment():
         return results
 
     results = f()
-    assert results.x == 1
-    assert results.y == 12
+    assert "x" not in results
+    assert results["y"] == 12
     assert not hasattr(results, "w")
     assert not hasattr(results, "z")
 
-    with afar.run() as results, afar.locally:
+    with afar.run as results, afar.locally:
         x = z
         y = x + 1
-    assert results.x == 1
-    assert results.y == 2
+    with raises(UnboundLocalError):
+        x
+    assert results == {"y": 2}
 
     # fmt: off
     with \
@@ -54,6 +56,5 @@ def test_temporary_assignment():
     :
         x = z
         y = x + 1
-    assert results.x == 1
-    assert results.y == 2
+    assert results == {'y': 2}
     # fmt: on
