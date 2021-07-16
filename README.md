@@ -65,5 +65,5 @@ with afar.run, on_gpus:
 ```
 This now works!  Keyword arguments to `remotely` will be passed to [`client.submit`](https://distributed.dask.org/en/latest/api.html#distributed.Client.submit).
 
-I don't know about you, but I think this is starting to look and feel kinda nice :)
+I don't know about you, but I think this is starting to look and feel kinda nice, and it could probably be even better :)
 ### *This code is highly experimental and magical!*
