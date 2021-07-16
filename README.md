@@ -35,6 +35,28 @@ assert data["c"].result() == 3
 ```
 `data` is a dictionary of variable names to Futures.  It may be necessary at times to get the data from here.
 
+### Is this a good idea?
+
+I don't know!
+
 For motivation, see https://github.com/dask/distributed/issues/4003
 
+It's natural to be skeptical of unconventional syntax.  Often times, I don't think it's obvious whether new syntax will be nice to use, and you really just need to try it out and see.
+
+We're still exploring the usability of `afar`.  If you try it out, please share what you think, and ask yourself questions such as:
+- can we spell anything better?
+- does this offer opportunities?
+- what is surprising?
+- what is lacking?
+
+Here's an example of an opportunity:
+```python
+on_gpus = afar.remotely(resources={"GPU": 1})
+
+with afar.run, on_gpus:
+    ...
+```
+This now works!  Keyword arguments to `remotely` will be passed to [`client.submit`](https://distributed.dask.org/en/latest/api.html#distributed.Client.submit).
+
+I don't know about you, but I think this is starting to look and feel kinda nice :)
 ### *This code is highly experimental and magical!*

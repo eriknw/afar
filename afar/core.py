@@ -18,18 +18,22 @@ except NameError as exc:
 
 
 class AfarException(Exception):
-    """Used to explicitly indicates where and how to execute the code of a context"""
+    """Used to explicitly indicate where and how to execute the code of a context"""
 
 
 class Where:
-    def __init__(self, where):
+    def __init__(self, where, submit_kwargs=None):
         self.where = where
+        self.submit_kwargs = submit_kwargs
 
     def __enter__(self):
-        raise AfarException(self.where)
+        raise AfarException(self)
 
     def __exit__(self, exc_type, exc_value, exc_traceback):  # pragma: no cover
         return False
+
+    def __call__(self, **submit_kwargs):
+        return Where(self.where, submit_kwargs)
 
 
 remotely = Where("remotely")
@@ -74,9 +78,12 @@ class Run:
             return False
 
         if issubclass(exc_type, AfarException):
-            self._where = exc_value.args[0]
+            where = exc_value.args[0]
+            self._where = where.where
+            submit_kwargs = where.submit_kwargs or {}
         elif issubclass(exc_type, NameError) and exc_value.args[0] in _errors_to_locations:
             self._where = _errors_to_locations[exc_value.args[0]]
+            submit_kwargs = {}
         else:
             # The exception is valid
             return False
@@ -139,9 +146,11 @@ class Run:
                 del self._scoped.outer_scope[key]
 
             client = distributed.client._get_global_client()
-            remote_dict = client.submit(run_on_worker, self._scoped, names, futures)
+            remote_dict = client.submit(
+                run_on_worker, self._scoped, names, futures, **submit_kwargs
+            )
             for name in names:
-                self._results[name] = client.submit(getitem, remote_dict, name)
+                self._results[name] = client.submit(getitem, remote_dict, name, **submit_kwargs)
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
