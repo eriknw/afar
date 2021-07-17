@@ -34,8 +34,13 @@ with afar.run as data, remotely:
 assert three.result() == 3
 assert data["three"].result() == 3
 ```
-`data` is a dictionary of variable names to Futures.  It may be necessary at times to get the data from here.
-
+`data` above is a dictionary of variable names to Futures.  It may be necessary at times to get the data from here.  Alternatively, you may pass a mapping to `afar.run` to use as the data.
+```python
+run = afar.run(data={"four": 4})
+with run, remotely:
+    seven = three + four
+assert run.data["seven"].result() == 7
+```
 If you want to automatically gather the data locally (to avoid calling `.result()`), use `afar.get` instead of `afar.run`:
 ```python
 with afar.get, remotely:

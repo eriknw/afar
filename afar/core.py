@@ -42,36 +42,46 @@ locally = Where("locally")
 class Run:
     _gather_data = False
 
-    def __init__(self, *names):
+    def __init__(self, *names, data=None):
         self.names = names
-        self._results = None
+        self.data = data
+        # afar.run can be used as a singleton without calling it.
+        # If we do this, we shouldn't keep data around.
+        self._is_singleton = data is None
         self._frame = None
         # For now, save the following to help debug
         self._where = None
         self._scoped = None
         self._with_lineno = None
 
-    def __call__(self, *names):
-        return type(self)(*names)
+    def __call__(self, *names, data=None):
+        if data is None:
+            if self.data is None:
+                data = {}
+            else:
+                data = self.data
+        return type(self)(*names, data=data)
 
     def __enter__(self):
         self._frame = inspect.currentframe().f_back
         self._with_lineno = self._frame.f_lineno
-        if self._results is not None:
-            raise RuntimeError("uh oh!")
-        self._results = {}
-        return self._results
+        if self._is_singleton:
+            if self.data is not None:
+                raise RuntimeError("uh oh!")
+            self.data = {}
+        return self.data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         try:
             return self._exit(exc_type, exc_value, exc_traceback)
         finally:
             self._frame = None
-            self._results = None
+            if self._is_singleton:
+                self.data = None
 
     def _exit(self, exc_type, exc_value, exc_traceback):
         frame = self._frame
-        if self._results is None:
+        if self.data is None:
             if exc_type is None:
                 raise RuntimeError("uh oh!")
             return False
@@ -95,7 +105,7 @@ class Run:
                 endline = line
                 break
         else:
-            endline = line
+            endline = line + 1
 
         # What line does the context begin?
         offset = -1
@@ -107,7 +117,11 @@ class Run:
                 offset, startline = next(it)
             line = startline
             while line < endline and line > self._with_lineno:
-                offset, line = next(it)
+                try:
+                    offset, line = next(it)
+                except StopIteration:
+                    line = endline
+                    break
             if line <= self._with_lineno:
                 startline = line
                 continue
@@ -117,7 +131,7 @@ class Run:
         # For now, we require that the source code is available.
         # There may be a more reliable way to get the context block,
         # but let's see how far this can take us!
-        lines = inspect.findsource(frame)[0][startline - 1 : endline - 1]
+        lines = inspect.findsource(frame)[0][startline - 1 : endline - 1]  # why -1 for each limit?
         source = "def _magic_function_():\n" + "".join(lines)
         c = compile(
             source,
@@ -136,7 +150,7 @@ class Run:
                     names = (inst.argval,)
 
         # Use innerscope!  We only keep the globals, locals, and closures we need.
-        self._scoped = innerscope.scoped_function(self._func)
+        self._scoped = innerscope.scoped_function(self._func, self.data)
         if self._scoped.missing:
             # Gather the necessary closures and locals
             f_locals = frame.f_locals
@@ -161,21 +175,19 @@ class Run:
                     for name in names
                 }
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
-                    self._results[futures_to_name[future]] = result
+                    self.data[futures_to_name[future]] = result
             else:
                 for name in names:
-                    self._results[name] = client.submit(
-                        afar_get, remote_dict, name, **submit_kwargs
-                    )
+                    self.data[name] = client.submit(afar_get, remote_dict, name, **submit_kwargs)
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
             for name in names:
-                self._results[name] = results[name]
+                self.data[name] = results[name]
 
         # Try to update the variables in the frame.
         # This currently only works if f_locals is f_globals, or if tracing (don't ask).
-        frame.f_locals.update(self._results)
+        frame.f_locals.update((name, self.data[name]) for name in names)
         return True
 
 
