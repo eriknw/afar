@@ -118,6 +118,7 @@ class Run:
             for inst in dis.get_instructions(frame.f_code):
                 print(inst)
             print()
+            print("self._with_lineno", self._with_lineno)
             print("startline", startline)
             print("endline", endline)
             print("".join(lines))
