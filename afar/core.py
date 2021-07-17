@@ -114,6 +114,16 @@ class Run:
         try:
             lines = inspect.findsource(frame)[0][startline - 1 : endline]
             source = "def _magic_function_():\n" + "".join(lines)
+
+            c = compile(
+                source,
+                frame.f_code.co_filename,
+                "exec",
+            )
+            d = {}
+            exec(c, frame.f_globals, d)
+            self._func = d["_magic_function_"]
+
         except TypeError:
             print("startline", startline)
             print("endline", endline)
@@ -134,15 +144,6 @@ class Run:
             except Exception:
                 print("inspect.findsource failed")
             raise
-
-        c = compile(
-            source,
-            frame.f_code.co_filename,
-            "exec",
-        )
-        d = {}
-        exec(c, frame.f_globals, d)
-        self._func = d["_magic_function_"]
 
         # If no variable names were given, only get the last assignment
         names = self.names
