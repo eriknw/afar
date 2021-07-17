@@ -110,28 +110,29 @@ class Run:
         # For now, we require that the source code is available.
         # There may be a more reliable way to get the context block,
         # but let's see how far this can take us!
-        lines = inspect.getframeinfo(frame, endline - startline + 1)[3]
+
         try:
+            lines = inspect.findsource(frame)[0][startline - 1 : endline]
             source = "def _magic_function_():\n" + "".join(lines)
         except TypeError:
-            print('startline', startline)
-            print('endline', endline)
-            print('type(lines)', type(lines))
-            print('lines', lines)
+            print("startline", startline)
+            print("endline", endline)
+            print("type(lines)", type(lines))
+            print("lines", lines)
             print(inspect.getframeinfo(frame, endline - startline + 1))
-            print('frame.f_code.co_filename', frame.f_code.co_filename)
+            print("frame.f_code.co_filename", frame.f_code.co_filename)
             try:
                 print(inspect.getfile(frame))
             except Exception:
-                print('inspect.getfile failed')
+                print("inspect.getfile failed")
             try:
                 print(inspect.getsourcefile(frame))
             except Exception:
-                print('inspect.getsourcefile failed')
+                print("inspect.getsourcefile failed")
             try:
                 print(inspect.findsource(frame))
             except Exception:
-                print('inspect.findsource failed')
+                print("inspect.findsource failed")
             raise
 
         c = compile(
@@ -169,9 +170,7 @@ class Run:
                 del self._scoped.outer_scope[key]
 
             client = distributed.client._get_global_client()
-            remote_dict = client.submit(
-                afar_run, self._scoped, names, futures, **submit_kwargs
-            )
+            remote_dict = client.submit(afar_run, self._scoped, names, futures, **submit_kwargs)
             if self._gather_data:
                 futures_to_name = {
                     client.submit(afar_get, remote_dict, name, **submit_kwargs): name
@@ -181,7 +180,9 @@ class Run:
                     self._results[futures_to_name[future]] = result
             else:
                 for name in names:
-                    self._results[name] = client.submit(afar_get, remote_dict, name, **submit_kwargs)
+                    self._results[name] = client.submit(
+                        afar_get, remote_dict, name, **submit_kwargs
+                    )
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
