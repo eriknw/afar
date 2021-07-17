@@ -28,6 +28,7 @@ jobs:
           coverage run --branch -m pytest
           pytest
       - name: Style checks
+        run: |
           pip install black flake8
           flake8 .
           black afar *.py --check --diff
