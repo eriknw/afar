@@ -119,6 +119,19 @@ class Run:
             print('type(lines)', type(lines))
             print('lines', lines)
             print(inspect.getframeinfo(frame, endline - startline + 1))
+            print('frame.f_code.co_filename', frame.f_code.co_filename)
+            try:
+                print(inspect.getfile(frame))
+            except Exception:
+                print('inspect.getfile failed')
+            try:
+                print(inspect.getsourcefile(frame))
+            except Exception:
+                print('inspect.getsourcefile failed')
+            try:
+                print(inspect.findsource(frame))
+            except Exception:
+                print('inspect.findsource failed')
             raise
 
         c = compile(
