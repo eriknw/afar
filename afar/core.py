@@ -2,8 +2,15 @@ import dis
 import inspect
 import innerscope
 from dask import distributed
+from tlz import last
+
+try:
+    from IPython.display import display
+except ImportError:
+    display = print
 
 
+# Get the string values of NameError messages we want to match
 _errors_to_locations = {}
 try:
     remotely
@@ -14,6 +21,15 @@ try:
     locally
 except NameError as exc:
     _errors_to_locations[exc.args[0]] = "locally"
+
+
+# Get bytecode to match to determine if the final statement is an expression
+def delete_me():
+    get
+
+
+_final_expr_code = delete_me.__code__.co_code[2:]
+del delete_me
 
 
 class AfarException(Exception):
@@ -141,6 +157,24 @@ class Run:
         d = {}
         exec(c, frame.f_globals, d)
         self._func = d["_magic_function_"]
+        display_expr = self._func.__code__.co_code.endswith(_final_expr_code)
+        if display_expr:
+            offset, lineno = last(dis.findlinestarts(self._func.__code__))
+            lineno -= startline
+            line = lines[lineno]
+            offset = len(line) - len(line.lstrip())
+            lines[lineno] = line[:offset] + "return " + line[offset:]
+
+            # XXX: Copy/paste from above.  TODO: don't copy/paste!
+            source = "def _magic_function_():\n" + "".join(lines)
+            c = compile(
+                source,
+                frame.f_code.co_filename,
+                "exec",
+            )
+            d = {}
+            exec(c, frame.f_globals, d)
+            self._func = d["_magic_function_"]
 
         # If no variable names were given, only get the last assignment
         names = self.names
@@ -168,7 +202,9 @@ class Run:
                 del self._scoped.outer_scope[key]
 
             client = distributed.client._get_global_client()
-            remote_dict = client.submit(afar_run, self._scoped, names, futures, **submit_kwargs)
+            remote_dict = client.submit(
+                afar_run, self._scoped, names, futures, display_expr, **submit_kwargs
+            )
             if self._gather_data:
                 futures_to_name = {
                     client.submit(afar_get, remote_dict, name, **submit_kwargs): name
@@ -179,15 +215,25 @@ class Run:
             else:
                 for name in names:
                     self.data[name] = client.submit(afar_get, remote_dict, name, **submit_kwargs)
+            # XXX: not ideal to always copy data back locally
+            if display_expr:
+                future = client.submit(
+                    afar_get, remote_dict, "_afar_final_expression_", **submit_kwargs
+                )
+                expr_value = future.result()
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
             for name in names:
                 self.data[name] = results[name]
+            if display_expr:
+                expr_value = results.return_value
 
         # Try to update the variables in the frame.
         # This currently only works if f_locals is f_globals, or if tracing (don't ask).
         frame.f_locals.update((name, self.data[name]) for name in names)
+        if display_expr:
+            display(expr_value)
         return True
 
 
@@ -197,10 +243,13 @@ class Get(Run):
     _gather_data = True
 
 
-def afar_run(sfunc, names, futures):
+def afar_run(sfunc, names, futures, display_expr):
     sfunc = sfunc.bind(futures)
     results = sfunc()
-    return {key: results[key] for key in names}
+    rv = {key: results[key] for key in names}
+    if display_expr:
+        rv["_afar_final_expression_"] = results.return_value
+    return rv
 
 
 def afar_get(d, k):
