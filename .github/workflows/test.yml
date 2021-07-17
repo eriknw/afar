@@ -28,19 +28,20 @@ jobs:
         run: |
           pip install pytest coverage
           coverage run --branch -m pytest
-          pytest
       - name: Style checks
         run: |
           pip install black flake8
           flake8 .
           black afar *.py --check --diff
+      - name: Coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+          COVERALLS_FLAG_NAME: ${{ matrix.python-version}}
+          COVERALLS_PARALLEL: true
+        run: |
+          pip install coveralls
           coverage report --show-missing
-      - name: Coveralls Parallel
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.github_token }}
-          flag-name: run-${{ matrix.python-version }}
-          parallel: true
+          coveralls --service=github
 
   finish:
     needs: test

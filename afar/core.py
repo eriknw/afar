@@ -50,7 +50,6 @@ class Run:
         self._where = None
         self._scoped = None
         self._with_lineno = None
-        self._with_lasti = None
 
     def __call__(self, *names):
         return type(self)(*names)
@@ -58,7 +57,6 @@ class Run:
     def __enter__(self):
         self._frame = inspect.currentframe().f_back
         self._with_lineno = self._frame.f_lineno
-        self._with_lasti = self._frame.f_lasti
         if self._results is not None:
             raise RuntimeError("uh oh!")
         self._results = {}
@@ -119,51 +117,16 @@ class Run:
         # For now, we require that the source code is available.
         # There may be a more reliable way to get the context block,
         # but let's see how far this can take us!
-        try:
-            lines = inspect.findsource(frame)[0][startline - 1 : endline - 1]
-
-            source = "def _magic_function_():\n" + "".join(lines)
-            print(list(dis.findlinestarts(frame.f_code)))
-            for inst in dis.get_instructions(frame.f_code):
-                print(inst)
-            print()
-            print("self._with_lasti", self._with_lasti)
-            print("frame.f_lasti", frame.f_lasti)
-            print("frame.f_lineno", frame.f_lineno)
-            print("self._with_lineno", self._with_lineno)
-            print("startline", startline)
-            print("endline", endline)
-            print("".join(lines))
-            print()
-            for i, line in enumerate(inspect.findsource(frame)[0]):
-                print(i, line.rstrip())
-            print()
-            c = compile(
-                source,
-                frame.f_code.co_filename,
-                "exec",
-            )
-            d = {}
-            exec(c, frame.f_globals, d)
-            self._func = d["_magic_function_"]
-        except TypeError:
-            print("type(lines)", type(lines))
-            print("lines", lines)
-            print(inspect.getframeinfo(frame, endline - startline + 1))
-            print("frame.f_code.co_filename", frame.f_code.co_filename)
-            try:
-                print(inspect.getfile(frame))
-            except Exception:
-                print("inspect.getfile failed")
-            try:
-                print(inspect.getsourcefile(frame))
-            except Exception:
-                print("inspect.getsourcefile failed")
-            try:
-                print(inspect.findsource(frame))
-            except Exception:
-                print("inspect.findsource failed")
-            raise
+        lines = inspect.findsource(frame)[0][startline - 1 : endline - 1]
+        source = "def _magic_function_():\n" + "".join(lines)
+        c = compile(
+            source,
+            frame.f_code.co_filename,
+            "exec",
+        )
+        d = {}
+        exec(c, frame.f_globals, d)
+        self._func = d["_magic_function_"]
 
         # If no variable names were given, only get the last assignment
         names = self.names
