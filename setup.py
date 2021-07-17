@@ -1,7 +1,7 @@
 import versioneer
 from setuptools import setup, find_packages
 
-
+install_requires = open("requirements.txt").read().strip().split("\n")
 with open("README.md") as f:
     long_description = f.read()
 
@@ -18,7 +18,7 @@ setup(
     license="BSD",
     python_requires=">=3.7",
     setup_requires=[],
-    install_requires=["innerscope", "distributed"],
+    install_requires=install_requires,
     tests_require=["pytest"],
     include_package_data=True,
     classifiers=[
