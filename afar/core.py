@@ -1,7 +1,6 @@
 import dis
 import inspect
 import innerscope
-from operator import getitem
 from dask import distributed
 
 
@@ -112,7 +111,16 @@ class Run:
         # There may be a more reliable way to get the context block,
         # but let's see how far this can take us!
         lines = inspect.getframeinfo(frame, endline - startline + 1)[3]
-        source = "def _magic_function_():\n" + "".join(lines)
+        try:
+            source = "def _magic_function_():\n" + "".join(lines)
+        except TypeError:
+            print('startline', startline)
+            print('endline', endline)
+            print('type(lines)', type(lines))
+            print('lines', lines)
+            print(inspect.getframeinfo(frame, endline - startline + 1))
+            raise
+
         c = compile(
             source,
             frame.f_code.co_filename,
@@ -149,18 +157,18 @@ class Run:
 
             client = distributed.client._get_global_client()
             remote_dict = client.submit(
-                run_on_worker, self._scoped, names, futures, **submit_kwargs
+                afar_run, self._scoped, names, futures, **submit_kwargs
             )
             if self._gather_data:
                 futures_to_name = {
-                    client.submit(getitem, remote_dict, name, **submit_kwargs): name
+                    client.submit(afar_get, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     self._results[futures_to_name[future]] = result
             else:
                 for name in names:
-                    self._results[name] = client.submit(getitem, remote_dict, name, **submit_kwargs)
+                    self._results[name] = client.submit(afar_get, remote_dict, name, **submit_kwargs)
         else:
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
@@ -179,10 +187,14 @@ class Get(Run):
     _gather_data = True
 
 
-def run_on_worker(sfunc, names, futures):
+def afar_run(sfunc, names, futures):
     sfunc = sfunc.bind(futures)
     results = sfunc()
     return {key: results[key] for key in names}
+
+
+def afar_get(d, k):
+    return d[k]
 
 
 run = Run()
