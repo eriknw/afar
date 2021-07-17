@@ -29,13 +29,13 @@ jobs:
           pip install pytest coverage
           coverage run --branch -m pytest
       - name: Style checks
-        if: (! contains(matrix.python-version, "pypy"))
+        if: (! contains(matrix.python-version, 'pypy'))
         run: |
           pip install black flake8
           flake8 .
           black afar *.py --check --diff
       - name: Coverage
-        if: (! contains(matrix.python-version, "pypy"))
+        if: (! contains(matrix.python-version, 'pypy'))
         env:
           GITHUB_TOKEN: ${{ secrets.github_token }}
           COVERALLS_FLAG_NAME: ${{ matrix.python-version}}
