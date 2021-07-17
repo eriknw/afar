@@ -114,6 +114,9 @@ class Run:
         try:
             lines = inspect.findsource(frame)[0][startline - 1 : endline]
             source = "def _magic_function_():\n" + "".join(lines)
+            print(list(dis.findlinestarts(frame.f_code)))
+            for inst in dis.get_instructions(frame.f_code):
+                print(inst)
             print()
             print("startline", startline)
             print("endline", endline)
@@ -130,7 +133,6 @@ class Run:
             d = {}
             exec(c, frame.f_globals, d)
             self._func = d["_magic_function_"]
-
         except TypeError:
             print("type(lines)", type(lines))
             print("lines", lines)
