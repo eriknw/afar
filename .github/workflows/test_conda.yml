@@ -36,5 +36,6 @@ jobs:
           which python  # sanity check
           pytest
       - name: Notebook test
+        run: |
           conda install -y -c conda-forge nbconvert jupyter
           jupyter nbconvert --to notebook --execute afar/tests/*ipynb
