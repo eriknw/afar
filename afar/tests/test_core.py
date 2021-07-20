@@ -60,6 +60,11 @@ def test_temporary_assignment():
     assert results == {'y': 2}
     # fmt: on
 
+    with afar.run("a") as results, locally:
+        a = 1
+        b = a + 1
+    assert results == {"a": 1}
+
 
 def test_give_data():
     data = {"a": 1}
