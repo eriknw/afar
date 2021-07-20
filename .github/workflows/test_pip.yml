@@ -45,6 +45,10 @@ jobs:
           pip install coveralls
           coverage report --show-missing
           coveralls --service=github
+      - name: Notebook test
+        run: |
+          pip install nbconvert jupyter
+          jupyter nbconvert --to notebook --execute afar/tests/*ipynb
 
   finish:
     needs: test
