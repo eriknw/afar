@@ -21,8 +21,9 @@ def test_a_modest_beginning():
         with afar.run(), locallyblah:
             pass
 
-    with afar.run():
-        pass
+    with raises(Exception, match="`afar.run` is missing a location"):
+        with afar.run():
+            pass
 
 
 # Not the final API, but a useful step
@@ -59,6 +60,11 @@ def test_temporary_assignment():
     assert results == {'y': 2}
     # fmt: on
 
+    with afar.run("a") as results, locally:
+        a = 1
+        b = a + 1
+    assert results == {"a": 1}
+
 
 def test_give_data():
     data = {"a": 1}
@@ -77,6 +83,19 @@ def test_give_data():
         e = 100
     assert afar.run.data is None
     assert data2 == {"e": 100}
+
+
+def test_endline():
+    # fmt: off
+    with afar.run as results, locally:
+        a = 1
+        b = (
+            a
+            +
+            2
+        )
+    assert results == {"b": 3}
+    # fmt: on
 
 
 def test_end_of_file():

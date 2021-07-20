@@ -15,6 +15,11 @@ try:
 except NameError as exc:
     _errors_to_locations[exc.args[0]] = "locally"
 
+try:
+    later
+except NameError as exc:
+    _errors_to_locations[exc.args[0]] = "later"
+
 
 class AfarException(Exception):
     """Used to explicitly indicate where and how to execute the code of a context"""
@@ -37,6 +42,52 @@ class Where:
 
 remotely = Where("remotely")
 locally = Where("locally")
+later = Where("later")
+
+
+def get_body_start(lines, with_start):
+    line = lines[with_start]
+    stripped = line.lstrip()
+    body = line[: len(line) - len(stripped)] + " pass\n"
+    body *= 2
+    with_lines = [stripped]
+    try:
+        code = compile(stripped, "<exec>", "exec")
+    except Exception:
+        pass
+    else:
+        raise RuntimeError(
+            "Failed to analyze the context!  When using afar, "
+            "please put the context body on a new line."
+        )
+    for i, line in enumerate(lines[with_start:]):
+        if i > 0:
+            with_lines.append(line)
+        if ":" in line:
+            source = "".join(with_lines) + body
+            try:
+                code = compile(source, "<exec>", "exec")
+            except Exception:
+                pass
+            else:
+                num_with = code.co_code.count(dis.opmap["SETUP_WITH"])
+                body_start = with_start + i + 1
+                return num_with, body_start
+    raise RuntimeError("Failed to analyze the context!")
+
+
+def get_body(lines):
+    head = "def f():\n with x:\n  "
+    tail = " pass\n pass\n"
+    while lines:
+        source = head + "  ".join(lines) + tail
+        try:
+            compile(source, "<exec>", "exec")
+        except Exception:
+            lines.pop()
+        else:
+            return lines
+    raise RuntimeError("Failed to analyze the context body!")
 
 
 class Run:
@@ -45,6 +96,7 @@ class Run:
     def __init__(self, *names, data=None):
         self.names = names
         self.data = data
+        self.context_body = None
         # afar.run can be used as a singleton without calling it.
         # If we do this, we shouldn't keep data around.
         self._is_singleton = data is None
@@ -52,7 +104,8 @@ class Run:
         # For now, save the following to help debug
         self._where = None
         self._scoped = None
-        self._with_lineno = None
+        self._body_start = None
+        self._lines = None
 
     def __call__(self, *names, data=None):
         if data is None:
@@ -64,11 +117,30 @@ class Run:
 
     def __enter__(self):
         self._frame = inspect.currentframe().f_back
-        self._with_lineno = self._frame.f_lineno
+        with_lineno = self._frame.f_lineno - 1
         if self._is_singleton:
-            if self.data is not None:
+            if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
+        lines, offset = inspect.findsource(self._frame)
+
+        while not lines[with_lineno].lstrip().startswith("with"):
+            with_lineno -= 1
+            if with_lineno < 0:
+                raise RuntimeError("Failed to analyze the context!")
+
+        num_with, body_start = get_body_start(lines, with_lineno)
+        if num_with < 2:
+            # Best effort detection.  This fails if there is a context *before* afar.run
+            within = type(self).__name__.lower()
+            raise RuntimeError(
+                f"`afar.{within}` is missing a location.  For example:\n\n"
+                f">>> with afar.{within}, remotely:\n"
+                f"...     pass\n\n"
+                f"Please specify a location such as adding `, remotely`."
+            )
+        self._body_start = body_start
+        self._lines = lines
         return self.data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -76,6 +148,7 @@ class Run:
             return self._exit(exc_type, exc_value, exc_traceback)
         finally:
             self._frame = None
+            self._lines = None
             if self._is_singleton:
                 self.data = None
 
@@ -100,39 +173,23 @@ class Run:
             return False
 
         # What line does the context end?
+        maxline = self._body_start
         for offset, line in dis.findlinestarts(frame.f_code):
+            if line > maxline:
+                maxline = line
             if offset > frame.f_lasti:
-                endline = line
+                endline = maxline - 1
                 break
         else:
-            endline = line + 1
+            endline = maxline + 5  # give us some wiggle room
 
-        # What line does the context begin?
-        offset = -1
-        it = dis.findlinestarts(frame.f_code)
-        while offset <= exc_traceback.tb_lasti:
-            offset, startline = next(it)
-        while True:
-            while startline <= self._with_lineno:
-                offset, startline = next(it)
-            line = startline
-            while line < endline and line > self._with_lineno:
-                try:
-                    offset, line = next(it)
-                except StopIteration:
-                    line = endline
-                    break
-            if line <= self._with_lineno:
-                startline = line
-                continue
-            break
+        self.context_body = get_body(self._lines[self._body_start : endline])
 
         # Create a new function from the code block of the context.
         # For now, we require that the source code is available.
         # There may be a more reliable way to get the context block,
         # but let's see how far this can take us!
-        lines = inspect.findsource(frame)[0][startline - 1 : endline - 1]  # why -1 for each limit?
-        source = "def _magic_function_():\n" + "".join(lines)
+        source = "def _magic_function_():\n" + "".join(self.context_body)
         c = compile(
             source,
             frame.f_code.co_filename,
@@ -179,11 +236,15 @@ class Run:
             else:
                 for name in names:
                     self.data[name] = client.submit(afar_get, remote_dict, name, **submit_kwargs)
-        else:
+        elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._scoped()
             for name in names:
                 self.data[name] = results[name]
+        elif self._where == "later":
+            return True
+        else:
+            raise ValueError(f"Don't know where {self._where!r} is")
 
         # Try to update the variables in the frame.
         # This currently only works if f_locals is f_globals, or if tracing (don't ask).
