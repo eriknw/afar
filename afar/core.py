@@ -117,14 +117,19 @@ class Run:
 
     def __enter__(self):
         self._frame = inspect.currentframe().f_back
-        with_lineno = self._frame.f_lineno
+        with_lineno = self._frame.f_lineno - 1
         if self._is_singleton:
             if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
         lines, offset = inspect.findsource(self._frame)
-        assert "with " in lines[with_lineno - 1]
-        num_with, body_start = get_body_start(lines, with_lineno - 1)
+
+        while not lines[with_lineno].lstrip().startswith("with"):
+            with_lineno -= 1
+            if with_lineno < 0:
+                raise RuntimeError("Failed to analyze the context!")
+
+        num_with, body_start = get_body_start(lines, with_lineno)
         if num_with < 2:
             # Best effort detection.  This fails if there is a context *before* afar.run
             within = type(self).__name__.lower()
