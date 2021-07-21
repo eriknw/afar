@@ -1,4 +1,5 @@
 import afar
+import pickle
 import pytest
 from pytest import raises
 
@@ -96,6 +97,18 @@ def test_endline():
         )
     assert results == {"b": 3}
     # fmt: on
+
+
+def test_pickle():
+    run = afar.run()
+    with run, locally:
+        a = 1
+    assert run.data == {"a": 1}
+    func = run._magic_func
+    s = pickle.dumps(func)
+    func2 = pickle.loads(s)
+    assert dict(func2()) == {"a": 1}
+    assert func._scoped.func.__code__.co_code == func2._scoped.func.__code__.co_code
 
 
 def test_end_of_file():
