@@ -225,14 +225,7 @@ def abracadabra(runner):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    code = compile(
-        source,
-        "<afar>",
-        "exec",
-    )
-    local_dict = {}
-    exec(code, runner._frame.f_globals, local_dict)
-    func = local_dict["_afar_magic_"]
+    func = create_func(source)
 
     # If no variable names were given, only get the last assignment
     names = runner.names
@@ -264,6 +257,18 @@ def abracadabra(runner):
     return magic_func, names, futures
 
 
+def create_func(source):
+    code = compile(
+        source,
+        "<afar>",
+        "exec",
+    )
+    globals_dict = {}
+    local_dict = {}
+    exec(code, globals_dict, local_dict)
+    return local_dict["_afar_magic_"]
+
+
 class MagicFunction:
     def __init__(self, source, scoped):
         self._source = source
@@ -283,14 +288,7 @@ class MagicFunction:
     def __setstate__(self, state):
         outer_scope = state.pop("outer_scope")
         self.__dict__.update(state)
-        code = compile(
-            self._source,
-            "<afar>",
-            "exec",
-        )
-        local_dict = {}
-        exec(code, outer_scope, local_dict)
-        func = local_dict["_afar_magic_"]
+        func = create_func(self._source)
         self._scoped = innerscope.scoped_function(func, outer_scope)
 
 
