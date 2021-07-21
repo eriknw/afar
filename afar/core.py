@@ -184,16 +184,11 @@ class Run:
             endline = maxline + 5  # give us some wiggle room
 
         self.context_body = get_body(self._lines[self._body_start : endline])
-        self._magic_func = MagicFunction(
-            frame, self.context_body, self.names, self.data, self._where
-        )
-        names = self._magic_func.names
+        self._magic_func, names, futures = abracadabra(self)
 
         if self._where == "remotely":
             client = distributed.client._get_global_client()
-            remote_dict = client.submit(
-                run_afar, self._magic_func, names, self._magic_func.futures, **submit_kwargs
-            )
+            remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
@@ -226,48 +221,52 @@ class Get(Run):
     _gather_data = True
 
 
+def abracadabra(runner):
+    # Create a new function from the code block of the context.
+    # For now, we require that the source code is available.
+    source = "def _afar_magic_():\n" + "".join(runner.context_body)
+    code = compile(
+        source,
+        "<afar>",
+        "exec",
+    )
+    local_dict = {}
+    exec(code, runner._frame.f_globals, local_dict)
+    func = local_dict["_afar_magic_"]
+
+    # If no variable names were given, only get the last assignment
+    names = runner.names
+    if not names:
+        for inst in list(dis.get_instructions(func)):
+            if inst.opname in {"STORE_NAME", "STORE_FAST", "STORE_DEREF", "STORE_GLOBAL"}:
+                names = (inst.argval,)
+
+    # Use innerscope!  We only keep the globals, locals, and closures we need.
+    scoped = innerscope.scoped_function(func, runner.data)
+    if scoped.missing:
+        # Gather the necessary closures and locals
+        f_locals = runner._frame.f_locals
+        update = {key: f_locals[key] for key in scoped.missing if key in f_locals}
+        scoped = scoped.bind(update)
+
+    if runner._where == "remotely":
+        # Get ready to submit to dask.distributed by separating the Futures.
+        futures = {
+            key: val
+            for key, val in scoped.outer_scope.items()
+            if isinstance(val, distributed.Future)
+        }
+        for key in futures:
+            del scoped.outer_scope[key]
+    else:
+        futures = None
+    magic_func = MagicFunction(source, scoped)
+    return magic_func, names, futures
+
+
 class MagicFunction:
-    def __init__(self, frame, context_body, names, data, where):
-        # Create a new function from the code block of the context.
-        # For now, we require that the source code is available.
-        self._source = "def _afar_magic_():\n" + "".join(context_body)
-        code = compile(
-            self._source,
-            "<afar>",
-            "exec",
-        )
-        local_dict = {}
-        exec(code, frame.f_globals, local_dict)
-        func = local_dict["_afar_magic_"]
-
-        # If no variable names were given, only get the last assignment
-        if not names:
-            for inst in list(dis.get_instructions(func)):
-                if inst.opname in {"STORE_NAME", "STORE_FAST", "STORE_DEREF", "STORE_GLOBAL"}:
-                    names = (inst.argval,)
-
-        # Use innerscope!  We only keep the globals, locals, and closures we need.
-        scoped = innerscope.scoped_function(func, data)
-        if scoped.missing:
-            # Gather the necessary closures and locals
-            f_locals = frame.f_locals
-            update = {key: f_locals[key] for key in scoped.missing if key in f_locals}
-            scoped = scoped.bind(update)
-
-        if where == "remotely":
-            # Get ready to submit to dask.distributed by separating the Futures.
-            self.futures = {
-                key: val
-                for key, val in scoped.outer_scope.items()
-                if isinstance(val, distributed.Future)
-            }
-            for key in self.futures:
-                del scoped.outer_scope[key]
-        else:
-            self.futures = None
-
-        self.where = where
-        self.names = names
+    def __init__(self, source, scoped):
+        self._source = source
         self._scoped = scoped
 
     def __call__(self):
@@ -277,7 +276,6 @@ class MagicFunction:
         # Instead of trying to serialize the function we created with `compile` and `exec`,
         # let's save the source and recreate the function (and self._scoped) again.
         state = dict(self.__dict__)
-        del state["futures"]
         del state["_scoped"]
         state["outer_scope"] = self._scoped.outer_scope
         return state
@@ -294,7 +292,6 @@ class MagicFunction:
         exec(code, outer_scope, local_dict)
         func = local_dict["_afar_magic_"]
         self._scoped = innerscope.scoped_function(func, outer_scope)
-        self.futures = None
 
 
 def run_afar(magic_func, names, futures):
