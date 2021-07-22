@@ -2,6 +2,7 @@ import dis
 import inspect
 import innerscope
 from dask import distributed
+from . import reprs
 
 
 _errors_to_locations = {}
@@ -185,25 +186,38 @@ class Run:
 
         self.context_body = get_body(self._lines[self._body_start : endline])
         self._magic_func, names, futures = abracadabra(self)
+        display_expr = self._magic_func._display_expr
 
         if self._where == "remotely":
             client = distributed.client._get_global_client()
             remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
+            if display_expr:
+                repr_val = client.submit(
+                    reprs.repr_afar,
+                    client.submit(get_afar, remote_dict, "_afar_return_value_"),
+                    self._magic_func._repr_methods,
+                )
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
+                del remote_dict  # Let go ASAP
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     self.data[futures_to_name[future]] = result
             else:
                 for name in names:
                     self.data[name] = client.submit(get_afar, remote_dict, name, **submit_kwargs)
+                del remote_dict  # Let go ASAP
+            if display_expr:
+                reprs.display_repr(repr_val.result())  # This blocks!
         elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
             for name in names:
                 self.data[name] = results[name]
+            if display_expr:
+                reprs.IPython.display.display(results.return_value)
         elif self._where == "later":
             return True
         else:
@@ -225,7 +239,7 @@ def abracadabra(runner):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    func = create_func(source, runner._frame.f_globals)
+    func, display_expr = create_func(source, runner._frame.f_globals, reprs.in_ipython())
 
     # If no variable names were given, only get the last assignment
     names = runner.names
@@ -253,11 +267,11 @@ def abracadabra(runner):
             del scoped.outer_scope[key]
     else:
         futures = None
-    magic_func = MagicFunction(source, scoped)
+    magic_func = MagicFunction(source, scoped, display_expr)
     return magic_func, names, futures
 
 
-def create_func(source, globals_dict):
+def create_func(source, globals_dict, is_in_ipython):
     code = compile(
         source,
         "<afar>",
@@ -265,13 +279,22 @@ def create_func(source, globals_dict):
     )
     locals_dict = {}
     exec(code, globals_dict, locals_dict)
-    return locals_dict["_afar_magic_"]
+    func = locals_dict["_afar_magic_"]
+    display_expr = is_in_ipython and reprs.endswith_expr(func)
+    if display_expr:
+        func = reprs.return_expr(func)
+    return func, display_expr
 
 
 class MagicFunction:
-    def __init__(self, source, scoped):
+    def __init__(self, source, scoped, display_expr):
         self._source = source
         self._scoped = scoped
+        self._display_expr = display_expr
+        if display_expr:
+            self._repr_methods = reprs.get_repr_methods()
+        else:
+            self._repr_methods = None
 
     def __call__(self):
         return self._scoped()
@@ -287,14 +310,17 @@ class MagicFunction:
     def __setstate__(self, state):
         outer_scope = state.pop("outer_scope")
         self.__dict__.update(state)
-        func = create_func(self._source, {})
+        func, _ = create_func(self._source, {}, self._display_expr)
         self._scoped = innerscope.scoped_function(func, outer_scope)
 
 
 def run_afar(magic_func, names, futures):
     sfunc = magic_func._scoped.bind(futures)
     results = sfunc()
-    return {key: results[key] for key in names}
+    rv = {key: results[key] for key in names}
+    if magic_func._display_expr:
+        rv["_afar_return_value_"] = results.return_value
+    return rv
 
 
 def get_afar(d, k):
