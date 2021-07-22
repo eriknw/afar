@@ -2,6 +2,7 @@ import dis
 import inspect
 import innerscope
 from dask import distributed
+from . import reprs
 
 
 _errors_to_locations = {}
@@ -192,7 +193,7 @@ class Run:
             remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
             if display_expr:
                 repr_val = client.submit(
-                    repr_afar,
+                    reprs.repr_afar,
                     client.submit(get_afar, remote_dict, "_afar_return_value_"),
                     self._magic_func._repr_methods,
                 )
@@ -209,14 +210,14 @@ class Run:
                     self.data[name] = client.submit(get_afar, remote_dict, name, **submit_kwargs)
                 del remote_dict  # Let go ASAP
             if display_expr:
-                display_repr(repr_val.result())  # This blocks!
+                reprs.display_repr(repr_val.result())  # This blocks!
         elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
             for name in names:
                 self.data[name] = results[name]
             if display_expr:
-                IPython.display.display(results.return_value)
+                reprs.IPython.display.display(results.return_value)
         elif self._where == "later":
             return True
         else:
@@ -238,7 +239,7 @@ def abracadabra(runner):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    func, display_expr = create_func(source, runner._frame.f_globals, in_ipython())
+    func, display_expr = create_func(source, runner._frame.f_globals, reprs.in_ipython())
 
     # If no variable names were given, only get the last assignment
     names = runner.names
@@ -279,9 +280,9 @@ def create_func(source, globals_dict, is_in_ipython):
     locals_dict = {}
     exec(code, globals_dict, locals_dict)
     func = locals_dict["_afar_magic_"]
-    display_expr = is_in_ipython and endswith_expr(func.__code__)
+    display_expr = is_in_ipython and reprs.endswith_expr(func)
     if display_expr:
-        func = return_expr(func)
+        func = reprs.return_expr(func)
     return func, display_expr
 
 
@@ -291,7 +292,7 @@ class MagicFunction:
         self._scoped = scoped
         self._display_expr = display_expr
         if display_expr:
-            self._repr_methods = get_repr_methods()
+            self._repr_methods = reprs.get_repr_methods()
         else:
             self._repr_methods = None
 
@@ -328,146 +329,3 @@ def get_afar(d, k):
 
 run = Run()
 get = Get()
-
-# Magic for repr
-# TODO: move to a new file
-import sys  # noqa
-import traceback  # noqa
-from types import CodeType, FunctionType  # noqa
-
-
-def endswith_expr(code):
-    co_code = code.co_code
-    return (
-        len(co_code) > 6
-        and co_code[-6] == dis.opmap["POP_TOP"]
-        and co_code[-4] == dis.opmap["LOAD_CONST"]
-        and co_code[-2] == dis.opmap["RETURN_VALUE"]
-        and code.co_consts[co_code[-3]] is None
-    )
-
-
-def return_expr(func):
-    code = func.__code__
-    # remove POP_TOP and LOAD_CONST (None)
-    co_code = code.co_code[:-6] + code.co_code[-2:]
-    code = code_replace(code, co_code=co_code)
-    rv = FunctionType(
-        code,
-        func.__globals__,
-        name=func.__name__,
-        argdefs=func.__defaults__,
-        closure=func.__closure__,
-    )
-    rv.__kwdefaults__ = func.__kwdefaults__
-    return rv
-
-
-if hasattr(CodeType, "replace"):
-    code_replace = CodeType.replace
-else:
-
-    def code_replace(code, *, co_code):
-        return CodeType(
-            code.co_argcount,
-            code.co_kwonlyargcount,
-            code.co_nlocals,
-            code.co_stacksize,
-            code.co_flags,
-            co_code,
-            code.co_consts,
-            code.co_names,
-            code.co_varnames,
-            code.co_filename,
-            code.co_name,
-            code.co_firstlineno,
-            code.co_lnotab,
-            code.co_freevars,
-            code.co_cellvars,
-        )
-
-
-try:
-    import IPython
-
-    def in_ipython():
-        return IPython.get_ipython() is not None
-
-
-except ImportError:
-
-    def in_ipython():
-        return False
-
-
-class AttrRecorder:
-    def __init__(self):
-        self._attrs = []
-
-    def __getattr__(self, attr):
-        if "canary" not in attr:
-            self._attrs.append(attr)
-        raise AttributeError(attr)
-
-
-def get_repr_methods():
-    ip = IPython.get_ipython()
-    if ip is None:
-        return
-    attr_recorder = AttrRecorder()
-    ip.display_formatter.format(attr_recorder)
-    repr_methods = attr_recorder._attrs
-    repr_methods.append("__repr__")
-    return repr_methods
-
-
-def repr_afar(val, repr_methods):
-    for method_name in repr_methods:
-        method = getattr(val, method_name, None)
-        if method is None:
-            continue
-        if method_name == "_ipython_display_":
-            return val, method_name, False
-        try:
-            rv = method()
-        except NotImplementedError:
-            continue
-        except Exception:
-            exc_info = sys.exc_info()
-            rv = traceback.format_exception(*exc_info)
-            return rv, method_name, True
-        else:
-            return rv, method_name, False
-    return None, "__repr__", False
-
-
-def display_repr(results):
-    val, method_name, is_exception = results
-    if is_exception:
-        print(val, file=sys.stderr)
-        return
-    if method_name == "_ipython_display_":
-        val._ipython_display_()
-    else:
-        mimic = MimicRepr(val, method_name)
-        IPython.display.display(mimic)
-
-
-class MimicRepr:
-    def __init__(self, val, method_name):
-        self.val = val
-        self.method_name = method_name
-
-    def __getattr__(self, attr):
-        if attr != self.method_name:
-            raise AttributeError(attr)
-        return self._call
-
-    def _call(self, *args, **kwargs):
-        return self.val
-
-    def __dir__(self):
-        return [self.method_name]
-
-    def __repr__(self):
-        return self.val
