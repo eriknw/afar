@@ -185,25 +185,38 @@ class Run:
 
         self.context_body = get_body(self._lines[self._body_start : endline])
         self._magic_func, names, futures = abracadabra(self)
+        display_expr = self._magic_func._display_expr
 
         if self._where == "remotely":
             client = distributed.client._get_global_client()
             remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
+            if display_expr:
+                repr_val = client.submit(
+                    repr_afar,
+                    client.submit(get_afar, remote_dict, "_afar_return_value_"),
+                    self._magic_func._repr_methods,
+                )
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
+                del remote_dict  # Let go ASAP
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     self.data[futures_to_name[future]] = result
             else:
                 for name in names:
                     self.data[name] = client.submit(get_afar, remote_dict, name, **submit_kwargs)
+                del remote_dict  # Let go ASAP
+            if display_expr:
+                display_repr(repr_val.result())  # This blocks!
         elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
             for name in names:
                 self.data[name] = results[name]
+            if display_expr:
+                IPython.display.display(results.return_value)
         elif self._where == "later":
             return True
         else:
@@ -225,7 +238,7 @@ def abracadabra(runner):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    func = create_func(source, runner._frame.f_globals)
+    func, display_expr = create_func(source, runner._frame.f_globals, in_ipython())
 
     # If no variable names were given, only get the last assignment
     names = runner.names
@@ -253,11 +266,11 @@ def abracadabra(runner):
             del scoped.outer_scope[key]
     else:
         futures = None
-    magic_func = MagicFunction(source, scoped)
+    magic_func = MagicFunction(source, scoped, display_expr)
     return magic_func, names, futures
 
 
-def create_func(source, globals_dict):
+def create_func(source, globals_dict, is_in_ipython):
     code = compile(
         source,
         "<afar>",
@@ -265,13 +278,22 @@ def create_func(source, globals_dict):
     )
     locals_dict = {}
     exec(code, globals_dict, locals_dict)
-    return locals_dict["_afar_magic_"]
+    func = locals_dict["_afar_magic_"]
+    display_expr = is_in_ipython and endswith_expr(func.__code__)
+    if display_expr:
+        func = return_expr(func)
+    return func, display_expr
 
 
 class MagicFunction:
-    def __init__(self, source, scoped):
+    def __init__(self, source, scoped, display_expr):
         self._source = source
         self._scoped = scoped
+        self._display_expr = display_expr
+        if display_expr:
+            self._repr_methods = get_repr_methods()
+        else:
+            self._repr_methods = None
 
     def __call__(self):
         return self._scoped()
@@ -287,14 +309,17 @@ class MagicFunction:
     def __setstate__(self, state):
         outer_scope = state.pop("outer_scope")
         self.__dict__.update(state)
-        func = create_func(self._source, {})
+        func, _ = create_func(self._source, {}, self._display_expr)
         self._scoped = innerscope.scoped_function(func, outer_scope)
 
 
 def run_afar(magic_func, names, futures):
     sfunc = magic_func._scoped.bind(futures)
     results = sfunc()
-    return {key: results[key] for key in names}
+    rv = {key: results[key] for key in names}
+    if magic_func._display_expr:
+        rv["_afar_return_value_"] = results.return_value
+    return rv
 
 
 def get_afar(d, k):
@@ -303,3 +328,146 @@ def get_afar(d, k):
 
 run = Run()
 get = Get()
+
+# Magic for repr
+# TODO: move to a new file
+import sys  # noqa
+import traceback  # noqa
+from types import CodeType, FunctionType  # noqa
+
+
+def endswith_expr(code):
+    co_code = code.co_code
+    return (
+        len(co_code) > 6
+        and co_code[-6] == dis.opmap["POP_TOP"]
+        and co_code[-4] == dis.opmap["LOAD_CONST"]
+        and co_code[-2] == dis.opmap["RETURN_VALUE"]
+        and code.co_consts[co_code[-3]] is None
+    )
+
+
+def return_expr(func):
+    code = func.__code__
+    # remove POP_TOP and LOAD_CONST (None)
+    co_code = code.co_code[:-6] + code.co_code[-2:]
+    code = code_replace(code, co_code=co_code)
+    rv = FunctionType(
+        code,
+        func.__globals__,
+        name=func.__name__,
+        argdefs=func.__defaults__,
+        closure=func.__closure__,
+    )
+    rv.__kwdefaults__ = func.__kwdefaults__
+    return rv
+
+
+if hasattr(CodeType, "replace"):
+    code_replace = CodeType.replace
+else:
+
+    def code_replace(code, *, co_code):
+        return CodeType(
+            code.co_argcount,
+            code.co_kwonlyargcount,
+            code.co_nlocals,
+            code.co_stacksize,
+            code.co_flags,
+            co_code,
+            code.co_consts,
+            code.co_names,
+            code.co_varnames,
+            code.co_filename,
+            code.co_name,
+            code.co_firstlineno,
+            code.co_lnotab,
+            code.co_freevars,
+            code.co_cellvars,
+        )
+
+
+try:
+    import IPython
+
+    def in_ipython():
+        return IPython.get_ipython() is not None
+
+
+except ImportError:
+
+    def in_ipython():
+        return False
+
+
+class AttrRecorder:
+    def __init__(self):
+        self._attrs = []
+
+    def __getattr__(self, attr):
+        if "canary" not in attr:
+            self._attrs.append(attr)
+        raise AttributeError(attr)
+
+
+def get_repr_methods():
+    ip = IPython.get_ipython()
+    if ip is None:
+        return
+    attr_recorder = AttrRecorder()
+    ip.display_formatter.format(attr_recorder)
+    repr_methods = attr_recorder._attrs
+    repr_methods.append("__repr__")
+    return repr_methods
+
+
+def repr_afar(val, repr_methods):
+    for method_name in repr_methods:
+        method = getattr(val, method_name, None)
+        if method is None:
+            continue
+        if method_name == "_ipython_display_":
+            return val, method_name, False
+        try:
+            rv = method()
+        except NotImplementedError:
+            continue
+        except Exception:
+            exc_info = sys.exc_info()
+            rv = traceback.format_exception(*exc_info)
+            return rv, method_name, True
+        else:
+            return rv, method_name, False
+    return None, "__repr__", False
+
+
+def display_repr(results):
+    val, method_name, is_exception = results
+    if is_exception:
+        print(val, file=sys.stderr)
+        return
+    if method_name == "_ipython_display_":
+        val._ipython_display_()
+    else:
+        mimic = MimicRepr(val, method_name)
+        IPython.display.display(mimic)
+
+
+class MimicRepr:
+    def __init__(self, val, method_name):
+        self.val = val
+        self.method_name = method_name
+
+    def __getattr__(self, attr):
+        if attr != self.method_name:
+            raise AttributeError(attr)
+        return self._call
+
+    def _call(self, *args, **kwargs):
+        return self.val
+
+    def __dir__(self):
+        return [self.method_name]
+
+    def __repr__(self):
+        return self.val
