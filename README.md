@@ -10,7 +10,7 @@
 > _Robert A. Heinlein_
 <hr>
 
-`afar` allows you to run code on a remote [Dask](https://dask.org/) [worker](https://distributed.dask.org/en/latest/) using context managers.  For example:
+`afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers.  For example:
 ```python
 import afar
 
