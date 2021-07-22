@@ -9,6 +9,7 @@ __pycache__/
 # Vi
 *.swp
 *.swo
+*.swn
 
 # Distribution / packaging
 .Python
@@ -115,3 +116,9 @@ venv.bak/
 
 # VSCode
 .vscode
+
+# Generated IPython notebooks
+*.nbconvert.ipynb
+
+# Dask worker
+dask-worker-space/
