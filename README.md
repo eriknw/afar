@@ -48,6 +48,12 @@ with afar.get, remotely:
     five = two + three
 assert five == 5
 ```
+If using IPython/Jupyter, the rich repr of the final expression will be displayed if it's not an assignment:
+```python
+with afar.run, remotely:
+    three + seven
+# displays 10!
+```
 
 ### Is this a good idea?
 
