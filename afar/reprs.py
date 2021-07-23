@@ -93,9 +93,7 @@ def get_repr_methods():
         return
     attr_recorder = AttrRecorder()
     ip.display_formatter.format(attr_recorder)
-    repr_methods = attr_recorder._attrs
-    repr_methods.append("__repr__")
-    return repr_methods
+    return attr_recorder._attrs
 
 
 def repr_afar(val, repr_methods):
@@ -118,8 +116,10 @@ def repr_afar(val, repr_methods):
             rv = traceback.format_exception(*exc_info)
             return rv, method_name, True
         else:
+            if rv is None or not isinstance(rv, str):
+                continue
             return rv, method_name, False
-    return None, "__repr__", False
+    return repr(val), "__repr__", False
 
 
 def display_repr(results):
