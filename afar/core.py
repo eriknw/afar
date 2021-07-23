@@ -27,8 +27,9 @@ class AfarException(Exception):
 
 
 class Where:
-    def __init__(self, where, submit_kwargs=None):
+    def __init__(self, where, client=None, submit_kwargs=None):
         self.where = where
+        self.client = client
         self.submit_kwargs = submit_kwargs
 
     def __enter__(self):
@@ -37,8 +38,8 @@ class Where:
     def __exit__(self, exc_type, exc_value, exc_traceback):  # pragma: no cover
         return False
 
-    def __call__(self, **submit_kwargs):
-        return Where(self.where, submit_kwargs)
+    def __call__(self, *, client=None, **submit_kwargs):
+        return Where(self.where, client, submit_kwargs)
 
 
 remotely = Where("remotely")
@@ -166,9 +167,11 @@ class Run:
             where = exc_value.args[0]
             self._where = where.where
             submit_kwargs = where.submit_kwargs or {}
+            client = where.client
         elif issubclass(exc_type, NameError) and exc_value.args[0] in _errors_to_locations:
             self._where = _errors_to_locations[exc_value.args[0]]
             submit_kwargs = {}
+            client = None
         else:
             # The exception is valid
             return False
@@ -189,7 +192,8 @@ class Run:
         display_expr = self._magic_func._display_expr
 
         if self._where == "remotely":
-            client = distributed.client._get_global_client()
+            if client is None:
+                client = distributed.client._get_global_client()
             remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
             if display_expr:
                 repr_val = client.submit(
