@@ -38,7 +38,7 @@ class Where:
     def __exit__(self, exc_type, exc_value, exc_traceback):  # pragma: no cover
         return False
 
-    def __call__(self, *, client=None, **submit_kwargs):
+    def __call__(self, client=None, **submit_kwargs):
         return Where(self.where, client, submit_kwargs)
 
 
@@ -194,7 +194,9 @@ class Run:
         if self._where == "remotely":
             if client is None:
                 client = distributed.client._get_global_client()
-            remote_dict = client.submit(run_afar, self._magic_func, names, futures, **submit_kwargs)
+            remote_dict = client.submit(
+                run_afar, self._magic_func, names, futures, pure=False, **submit_kwargs
+            )
             if display_expr:
                 repr_val = client.submit(
                     reprs.repr_afar,
