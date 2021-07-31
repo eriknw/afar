@@ -49,7 +49,7 @@ jobs:
       - name: Notebook test
         if: (! contains(matrix.python-version, 'pypy')) || (! contains(matrix.os, 'windows'))
         run: |
-          pip install nbconvert jupyter
+          pip install nbconvert jupyter pytest
           jupyter nbconvert --to notebook --execute afar/tests/*ipynb
 
   finish:
