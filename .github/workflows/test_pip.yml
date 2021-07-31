@@ -26,6 +26,7 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
       - name: PyTest
+        if: (! contains(matrix.python-version, 'pypy')) || contains(matrix.os, 'windows')
         run: |
           pip install pytest coverage
           coverage run --branch -m pytest

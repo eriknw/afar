@@ -10,9 +10,13 @@
 > _Robert A. Heinlein_
 <hr>
 
+**To install:** `pip install afar`
+
 `afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers.  For example:
 ```python
 import afar
+from dask.distributed import Client
+client = Client()
 
 with afar.run, remotely:
     import dask_cudf
