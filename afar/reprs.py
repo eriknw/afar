@@ -106,6 +106,7 @@ def repr_afar(val, repr_methods):
         if method is None:
             continue
         if method_name == "_ipython_display_":
+            # Custom display!  Send the object to the client
             return val, method_name, False
         try:
             rv = method()
@@ -116,7 +117,12 @@ def repr_afar(val, repr_methods):
             rv = traceback.format_exception(*exc_info)
             return rv, method_name, True
         else:
-            if rv is None or not isinstance(rv, str):
+            if rv is None:
+                continue
+            if method_name == "_repr_mimebundle_":
+                if not isinstance(rv, (dict, tuple)):
+                    continue
+            elif not isinstance(rv, str):
                 continue
             return rv, method_name, False
     return repr(val), "__repr__", False
