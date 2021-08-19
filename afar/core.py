@@ -140,7 +140,7 @@ class Run:
                 lines = cell.splitlines(keepends=True)
                 # strip the magic
                 for i, line in enumerate(lines):
-                    if line.strip().startswith("%%"):
+                    if line.strip().startswith("%%time"):
                         lines = lines[i + 1 :]
                         break
                 else:
