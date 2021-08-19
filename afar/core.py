@@ -1,9 +1,10 @@
 import dis
 import inspect
+
 import innerscope
 from dask import distributed
-from . import reprs
 
+from . import reprs
 
 _errors_to_locations = {}
 try:
@@ -124,7 +125,37 @@ class Run:
             if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
-        lines, offset = inspect.findsource(self._frame)
+        try:
+            lines, offset = inspect.findsource(self._frame)
+        except OSError:
+            # Try to fine the source if we are in %%time or %%timeit magic
+            if (
+                self._frame.f_code.co_filename in {"<timed exec>", "<magic-timeit>"}
+                and reprs.in_ipython()
+            ):
+                import IPython
+
+                ip = IPython.get_ipython()
+                cell = ip.history_manager._i00  # The current cell!
+                lines = cell.splitlines(keepends=True)
+                # strip the magic
+                for i, line in enumerate(lines):
+                    if line.strip().startswith("%%"):
+                        lines = lines[i + 1 :]
+                        break
+                else:
+                    raise
+                # strip blank lines
+                for i, line in enumerate(lines):
+                    if line.strip():
+                        if i:
+                            lines = lines[i:]
+                        lines[-1] += "\n"
+                        break
+                else:
+                    raise
+            else:
+                raise
 
         while not lines[with_lineno].lstrip().startswith("with"):
             with_lineno -= 1
@@ -182,7 +213,7 @@ class Run:
             if line > maxline:
                 maxline = line
             if offset > frame.f_lasti:
-                endline = maxline - 1
+                endline = max(maxline, maxline - 1)
                 break
         else:
             endline = maxline + 5  # give us some wiggle room
