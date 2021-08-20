@@ -1,8 +1,10 @@
 import subprocess
 import sys
-import afar
 from operator import add
+
 from dask.distributed import Client
+
+import afar
 
 # TODO: better testing infrastructure
 if __name__ == "__main__":

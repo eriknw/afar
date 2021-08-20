@@ -1,5 +1,6 @@
-import afar
 from pytest import raises
+
+import afar
 
 
 def test_later_doesnt_execute():

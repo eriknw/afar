@@ -1,7 +1,9 @@
-import afar
 import pickle
+
 import pytest
 from pytest import raises
+
+import afar
 
 
 def test_a_modest_beginning():
