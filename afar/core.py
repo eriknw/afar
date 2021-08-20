@@ -3,6 +3,7 @@ import dis
 import inspect
 import io
 import sys
+import weakref
 
 import innerscope
 from dask import distributed
@@ -107,6 +108,8 @@ class Run:
         # If we do this, we shouldn't keep data around.
         self._is_singleton = data is None
         self._frame = None
+        # Used to cancel work
+        self._client_to_futures = weakref.WeakKeyDictionary()
         # For now, save the following to help debug
         self._where = None
         self._magic_func = None
@@ -180,8 +183,14 @@ class Run:
         return self.data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        self._where = None
         try:
             return self._exit(exc_type, exc_value, exc_traceback)
+        except KeyboardInterrupt:
+            # Cancel all pending tasks
+            if self._where == "remotely":
+                self.cancel()
+            raise
         finally:
             self._frame = None
             self._lines = None
@@ -228,6 +237,11 @@ class Run:
         if self._where == "remotely":
             if client is None:
                 client = distributed.client._get_global_client()
+            if client not in self._client_to_futures:
+                weak_futures = weakref.WeakSet()
+                self._client_to_futures[client] = weak_futures
+            else:
+                weak_futures = self._client_to_futures[client]
             to_scatter = self.data.keys() & self._magic_func._scoped.outer_scope.keys()
             if to_scatter:
                 # Scatter value in `self.data` that we need in this calculation.
@@ -247,39 +261,51 @@ class Run:
                     del self._magic_func._scoped.outer_scope[key]
             # Scatter magic_func to avoid "Large object" UserWarning
             magic_func = client.scatter(self._magic_func)
+            weak_futures.add(magic_func)
             remote_dict = client.submit(
                 run_afar, magic_func, names, futures, pure=False, **submit_kwargs
             )
-            del magic_func  # Let go ASAP
+            weak_futures.add(remote_dict)
+            magic_func.release()  # Let go ASAP
             if display_expr:
                 repr_val = client.submit(
                     reprs.repr_afar,
                     client.submit(get_afar, remote_dict, "_afar_return_value_"),
                     self._magic_func._repr_methods,
                 )
-            stdout_val = client.submit(get_afar, remote_dict, "_afar_stdout_")
-            stderr_val = client.submit(get_afar, remote_dict, "_afar_stderr_")
+                weak_futures.add(repr_val)
+            stdout_future = client.submit(get_afar, remote_dict, "_afar_stdout_")
+            weak_futures.add(stdout_future)
+            stderr_future = client.submit(get_afar, remote_dict, "_afar_stderr_")
+            weak_futures.add(stderr_future)
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
-                del remote_dict  # Let go ASAP
+                weak_futures.update(futures_to_name)
+                remote_dict.release()  # Let go ASAP
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     self.data[futures_to_name[future]] = result
             else:
                 for name in names:
-                    self.data[name] = client.submit(get_afar, remote_dict, name, **submit_kwargs)
-                del remote_dict  # Let go ASAP
+                    future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
+                    weak_futures.add(future)
+                    self.data[name] = future
+                remote_dict.release()  # Let go ASAP
+
             # blocks!
-            stdout_val = stdout_val.result()
+            stdout_val = stdout_future.result()
             if stdout_val:
                 print(stdout_val, end="")
-            stderr_val = stderr_val.result()
+            stdout_future.release()
+            stderr_val = stderr_future.result()
             if stderr_val:
                 print(stderr_val, end="", file=sys.stderr)
+            stderr_future.release()
             if display_expr:
                 reprs.display_repr(repr_val.result())  # This blocks!
+                repr_val.release()
         elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
@@ -296,6 +322,18 @@ class Run:
         # This currently only works if f_locals is f_globals, or if tracing (don't ask).
         frame.f_locals.update((name, self.data[name]) for name in names)
         return True
+
+    def cancel(self, *, client=None, force=False):
+        """Cancel pending tasks"""
+        if client is not None:
+            items = [(client, self._client_to_futures[client])]
+        else:
+            items = self._client_to_futures.items()
+        for client, weak_futures in items:
+            client.cancel(
+                [future for future in weak_futures if future.status == "pending"], force=force
+            )
+            weak_futures.clear()
 
 
 class Get(Run):
@@ -331,6 +369,7 @@ def abracadabra(runner):
             key: val
             for key, val in scoped.outer_scope.items()
             if isinstance(val, distributed.Future)
+            # TODO: what can/should we do if the future is in a bad state?
         }
         for key in futures:
             del scoped.outer_scope[key]
