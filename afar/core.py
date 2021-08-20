@@ -1,5 +1,8 @@
+import builtins
 import dis
 import inspect
+import io
+import sys
 
 import innerscope
 from dask import distributed
@@ -254,6 +257,8 @@ class Run:
                     client.submit(get_afar, remote_dict, "_afar_return_value_"),
                     self._magic_func._repr_methods,
                 )
+            stdout_val = client.submit(get_afar, remote_dict, "_afar_stdout_")
+            stderr_val = client.submit(get_afar, remote_dict, "_afar_stderr_")
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
@@ -266,6 +271,13 @@ class Run:
                 for name in names:
                     self.data[name] = client.submit(get_afar, remote_dict, name, **submit_kwargs)
                 del remote_dict  # Let go ASAP
+            # blocks!
+            stdout_val = stdout_val.result()
+            if stdout_val:
+                print(stdout_val, end="")
+            stderr_val = stderr_val.result()
+            if stderr_val:
+                print(stderr_val, end="", file=sys.stderr)
             if display_expr:
                 reprs.display_repr(repr_val.result())  # This blocks!
         elif self._where == "locally":
@@ -371,12 +383,37 @@ class MagicFunction:
         self._scoped = innerscope.scoped_function(func, outer_scope)
 
 
+class RecordPrint:
+    def __init__(self):
+        self.stdout = io.StringIO()
+        self.stderr = io.StringIO()
+
+    def __enter__(self):
+        self.print = builtins.print
+        builtins.print = self
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        builtins.print = self.print
+        return False
+
+    def __call__(self, *args, file=None, **kwargs):
+        if file is None or file is sys.stdout:
+            file = self.stdout
+        elif file is sys.stderr:
+            file = self.stderr
+        self.print(*args, **kwargs, file=file)
+
+
 def run_afar(magic_func, names, futures):
     sfunc = magic_func._scoped.bind(futures)
-    results = sfunc()
+    with RecordPrint() as rec:
+        results = sfunc()
     rv = {key: results[key] for key in names}
     if magic_func._display_expr:
         rv["_afar_return_value_"] = results.return_value
+    rv["_afar_stdout_"] = rec.stdout.getvalue()
+    rv["_afar_stderr_"] = rec.stderr.getvalue()
     return rv
 
 
