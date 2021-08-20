@@ -225,9 +225,29 @@ class Run:
         if self._where == "remotely":
             if client is None:
                 client = distributed.client._get_global_client()
+            to_scatter = self.data.keys() & self._magic_func._scoped.outer_scope.keys()
+            if to_scatter:
+                # Scatter value in `self.data` that we need in this calculation.
+                # This moves data from local to remote, then keeps it remote.
+                # Things in `self.data` may get reused, so it can be helpful to
+                # move them.  We could move everything in `self.data`, but we
+                # only move the things we need.  We could also scatter everything
+                # in `self._magic_func._scoped.outer_scope`, but we can't reuse
+                # them, because they may get modified locally.
+                to_scatter = list(to_scatter)
+                # I'm afraid to hash, because users may accidentally mutate things.
+                scattered = client.scatter([self.data[key] for key in to_scatter], hash=False)
+                scattered = dict(zip(to_scatter, scattered))
+                futures.update(scattered)
+                self.data.update(scattered)
+                for key in to_scatter:
+                    del self._magic_func._scoped.outer_scope[key]
+            # Scatter magic_func to avoid "Large object" UserWarning
+            magic_func = client.scatter(self._magic_func)
             remote_dict = client.submit(
-                run_afar, self._magic_func, names, futures, pure=False, **submit_kwargs
+                run_afar, magic_func, names, futures, pure=False, **submit_kwargs
             )
+            del magic_func  # Let go ASAP
             if display_expr:
                 repr_val = client.submit(
                     reprs.repr_afar,
