@@ -309,7 +309,7 @@ class Run:
     def cancel(self, *, client=None, force=False):
         """Cancel pending tasks"""
         if client is not None:
-            items = (client, self._client_to_futures[client])
+            items = [(client, self._client_to_futures[client])]
         else:
             items = self._client_to_futures.items()
         for client, weak_futures in items:
