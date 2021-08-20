@@ -83,4 +83,41 @@ with afar.run, on_gpus:
 This now works!  Keyword arguments to `remotely` will be passed to [`client.submit`](https://distributed.dask.org/en/latest/api.html#distributed.Client.submit).
 
 I don't know about you, but I think this is starting to look and feel kinda nice, and it could probably be even better :)
+
+### Caveats and Gotchas
+
+#### Repeatedly copying data
+
+`afar` automatically gets the data it needs--and only the data it needs--from the outer scope
+and sends it to the Dask cluster to compute on.  Since we don't know whether local data has been modified
+between calls to `afar`, we serialize and send local variables every time we use `run` or `get`.
+This is generally fine: it works, it's safe, and is usually fast enough.  However, if you do this
+frequently with large-ish data, the performance could suffer, and you may be using
+more memory on your local machine than necessary.
+
+With Dask, a common pattern is to send data to the cluster with `scatter` and get a `Future` back.  This works:
+```python
+A = np.arange(10**7)
+A = client.scatter(A)
+with afar.run, remotely:
+    B = A + 1
+# A and B are now both Futures; their data is on the cluster
+```
+
+Another option is to pass `data` to `run`:
+```python
+run = afar.run(data={"A": np.arange(10**7)})
+with afar.run, remotely:
+    B = A + 1
+# run.data["A"] and B are now both Futures; their data is on the cluster
+```
+Here's a nifty trick to use if you're in an IPython notebook: use `data=globals()`!
+```python
+run = afar.run(data=globals())
+A = np.arange(10**7)
+with afar.run, remotely:
+    B = A + 1
+# A and B are now both Futures; their data is on the cluster
+```
+
 ### *This code is highly experimental and magical!*
