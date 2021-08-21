@@ -1,68 +1,15 @@
-import builtins
 import dis
-import inspect
-import io
-import sys
-import threading
-import weakref
 from functools import partial
+from inspect import currentframe, findsource
+from weakref import WeakKeyDictionary, WeakSet
 
-import innerscope
 from dask import distributed
 
-from . import reprs
-
-
-def _supports_async_output():
-    if reprs.is_kernel() and not reprs.in_terminal():
-        try:
-            import ipywidgets  # noqa
-        except ImportError:
-            return False
-        return True
-    return False
-
-
-_errors_to_locations = {}
-try:
-    remotely
-except NameError as exc:
-    _errors_to_locations[exc.args[0]] = "remotely"
-
-try:
-    locally
-except NameError as exc:
-    _errors_to_locations[exc.args[0]] = "locally"
-
-try:
-    later
-except NameError as exc:
-    _errors_to_locations[exc.args[0]] = "later"
-
-
-class AfarException(Exception):
-    """Used to explicitly indicate where and how to execute the code of a context"""
-
-
-class Where:
-    def __init__(self, where, client=None, submit_kwargs=None):
-        self.where = where
-        self.client = client
-        self.submit_kwargs = submit_kwargs
-
-    def __enter__(self):
-        raise AfarException(self)
-
-    def __exit__(self, exc_type, exc_value, exc_traceback):  # pragma: no cover
-        return False
-
-    def __call__(self, client=None, **submit_kwargs):
-        return Where(self.where, client, submit_kwargs)
-
-
-remotely = Where("remotely")
-locally = Where("locally")
-later = Where("later")
+from ._magic import abracadabra
+from ._printing import RecordPrint, print_outputs, print_outputs_async
+from ._reprs import repr_afar
+from ._utils import is_kernel, supports_async_output
+from ._where import find_where
 
 
 def get_body_start(lines, with_start):
@@ -122,7 +69,7 @@ class Run:
         self._is_singleton = data is None
         self._frame = None
         # Used to cancel work
-        self._client_to_futures = weakref.WeakKeyDictionary()
+        self._client_to_futures = WeakKeyDictionary()
         # For now, save the following to help debug
         self._where = None
         self._magic_func = None
@@ -138,20 +85,17 @@ class Run:
         return type(self)(*names, data=data)
 
     def __enter__(self):
-        self._frame = inspect.currentframe().f_back
+        self._frame = currentframe().f_back
         with_lineno = self._frame.f_lineno - 1
         if self._is_singleton:
             if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
         try:
-            lines, offset = inspect.findsource(self._frame)
+            lines, offset = findsource(self._frame)
         except OSError:
             # Try to fine the source if we are in %%time or %%timeit magic
-            if (
-                self._frame.f_code.co_filename in {"<timed exec>", "<magic-timeit>"}
-                and reprs.is_kernel()
-            ):
+            if self._frame.f_code.co_filename in {"<timed exec>", "<magic-timeit>"} and is_kernel():
                 from IPython import get_ipython
 
                 ip = get_ipython()
@@ -221,18 +165,13 @@ class Run:
         if exc_type is None or exc_traceback.tb_frame is not frame:
             return False
 
-        if issubclass(exc_type, AfarException):
-            where = exc_value.args[0]
-            self._where = where.where
-            submit_kwargs = where.submit_kwargs or {}
-            client = where.client
-        elif issubclass(exc_type, NameError) and exc_value.args[0] in _errors_to_locations:
-            self._where = _errors_to_locations[exc_value.args[0]]
-            submit_kwargs = {}
-            client = None
-        else:
+        where = find_where(exc_type, exc_value)
+        if where is None:
             # The exception is valid
             return False
+        self._where = where.where
+        submit_kwargs = where.submit_kwargs or {}
+        client = where.client
 
         # What line does the context end?
         maxline = self._body_start
@@ -253,7 +192,7 @@ class Run:
             if client is None:
                 client = distributed.client._get_global_client()
             if client not in self._client_to_futures:
-                weak_futures = weakref.WeakSet()
+                weak_futures = WeakSet()
                 self._client_to_futures[client] = weak_futures
             else:
                 weak_futures = self._client_to_futures[client]
@@ -263,7 +202,7 @@ class Run:
                 self._gather_data  # we're blocking anyway to gather data
                 or display_expr  # we need to display an expression (sync or async)
                 or has_print  # print is in the context body
-                or _supports_async_output()  # no need to block, so why not?
+                or supports_async_output()  # no need to block, so why not?
             )
 
             to_scatter = self.data.keys() & self._magic_func._scoped.outer_scope.keys()
@@ -293,7 +232,7 @@ class Run:
             magic_func.release()  # Let go ASAP
             if display_expr:
                 repr_future = client.submit(
-                    reprs.repr_afar,
+                    repr_afar,
                     client.submit(get_afar, remote_dict, "_afar_return_value_"),
                     self._magic_func._repr_methods,
                 )
@@ -321,7 +260,7 @@ class Run:
                     self.data[name] = future
                 remote_dict.release()  # Let go ASAP
 
-            if capture_print and _supports_async_output():
+            if capture_print and supports_async_output():
                 # Display in `out` cell when data is ready: non-blocking
                 from IPython.display import display
                 from ipywidgets import Output
@@ -330,23 +269,11 @@ class Run:
                 display(out)
                 # Can we show `distributed.progress` right here?
                 stdout_future.add_done_callback(
-                    partial(_display_outputs, out, stderr_future, repr_future)
+                    partial(print_outputs_async, out, stderr_future, repr_future)
                 )
             elif capture_print:
                 # blocks!
-                stdout_val = stdout_future.result()
-                stdout_future.release()
-                if stdout_val:
-                    print(stdout_val, end="")
-                stderr_val = stderr_future.result()
-                stderr_future.release()
-                if stderr_val:
-                    print(stderr_val, end="", file=sys.stderr)
-                if display_expr:
-                    repr_val = repr_future.result()
-                    repr_future.release()
-                    if repr_val is not None:
-                        reprs.display_repr(repr_val)
+                print_outputs(stdout_future, stderr_future, repr_future)
         elif self._where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
@@ -383,147 +310,6 @@ class Get(Run):
     """Unlike ``run``, ``get`` automatically gathers the data locally"""
 
     _gather_data = True
-
-
-def _display_outputs(out, stderr_future, repr_future, stdout_future):
-    stdout_val = stdout_future.result()
-    stderr_val = stderr_future.result()
-    if repr_future is not None:
-        repr_val = repr_future.result()
-    else:
-        repr_val = None
-    if stdout_val or stderr_val or repr_val is not None:
-        with out:
-            if stdout_val:
-                print(stdout_val, end="")
-            if stderr_val:
-                print(stderr_val, end="", file=sys.stderr)
-            if repr_val is not None:
-                reprs.display_repr(repr_val)
-
-
-def abracadabra(runner):
-    # Create a new function from the code block of the context.
-    # For now, we require that the source code is available.
-    source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    func, display_expr = create_func(source, runner._frame.f_globals, reprs.is_kernel())
-
-    # If no variable names were given, only get the last assignment
-    names = runner.names
-    if not names:
-        for inst in list(dis.get_instructions(func)):
-            if inst.opname in {"STORE_NAME", "STORE_FAST", "STORE_DEREF", "STORE_GLOBAL"}:
-                names = (inst.argval,)
-
-    # Use innerscope!  We only keep the globals, locals, and closures we need.
-    scoped = innerscope.scoped_function(func, runner.data)
-    if scoped.missing:
-        # Gather the necessary closures and locals
-        f_locals = runner._frame.f_locals
-        update = {key: f_locals[key] for key in scoped.missing if key in f_locals}
-        scoped = scoped.bind(update)
-
-    if runner._where == "remotely":
-        # Get ready to submit to dask.distributed by separating the Futures.
-        futures = {
-            key: val
-            for key, val in scoped.outer_scope.items()
-            if isinstance(val, distributed.Future)
-            # TODO: what can/should we do if the future is in a bad state?
-        }
-        for key in futures:
-            del scoped.outer_scope[key]
-    else:
-        futures = None
-    magic_func = MagicFunction(source, scoped, display_expr)
-    return magic_func, names, futures
-
-
-def create_func(source, globals_dict, is_in_ipython):
-    code = compile(
-        source,
-        "<afar>",
-        "exec",
-    )
-    locals_dict = {}
-    exec(code, globals_dict, locals_dict)
-    func = locals_dict["_afar_magic_"]
-    display_expr = is_in_ipython and reprs.endswith_expr(func)
-    if display_expr:
-        func = reprs.return_expr(func)
-    return func, display_expr
-
-
-class MagicFunction:
-    def __init__(self, source, scoped, display_expr):
-        self._source = source
-        self._scoped = scoped
-        self._display_expr = display_expr
-        if display_expr:
-            self._repr_methods = reprs.get_repr_methods()
-        else:
-            self._repr_methods = None
-
-    def __call__(self):
-        return self._scoped()
-
-    def __getstate__(self):
-        # Instead of trying to serialize the function we created with `compile` and `exec`,
-        # let's save the source and recreate the function (and self._scoped) again.
-        state = dict(self.__dict__)
-        del state["_scoped"]
-        state["outer_scope"] = self._scoped.outer_scope
-        return state
-
-    def __setstate__(self, state):
-        outer_scope = state.pop("outer_scope")
-        self.__dict__.update(state)
-        func, _ = create_func(self._source, {}, self._display_expr)
-        self._scoped = innerscope.scoped_function(func, outer_scope)
-
-
-# Here's the plan: we'll capture all print statements to stdout and stderr
-# on the current thread.  But, we need to leave the other threads alone!
-# So, use `threading.local` and a lock for some ugly capturing.
-class LocalPrint(threading.local):
-    printer = None
-
-    def __call__(self, *args, **kwargs):
-        return self.printer(*args, **kwargs)
-
-
-class RecordPrint:
-    n = 0
-    local_print = LocalPrint()
-    print_lock = threading.Lock()
-
-    def __init__(self):
-        self.stdout = io.StringIO()
-        self.stderr = io.StringIO()
-
-    def __enter__(self):
-        with self.print_lock:
-            if RecordPrint.n == 0:
-                LocalPrint.printer = builtins.print
-                builtins.print = self.local_print
-            RecordPrint.n += 1
-        self.local_print.printer = self
-        return self
-
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        with self.print_lock:
-            RecordPrint.n -= 1
-            if RecordPrint.n == 0:
-                builtins.print = LocalPrint.printer
-        self.local_print.printer = LocalPrint.printer
-        return False
-
-    def __call__(self, *args, file=None, **kwargs):
-        if file is None or file is sys.stdout:
-            file = self.stdout
-        elif file is sys.stderr:
-            file = self.stderr
-        LocalPrint.printer(*args, **kwargs, file=file)
 
 
 def run_afar(magic_func, names, futures, capture_print):
