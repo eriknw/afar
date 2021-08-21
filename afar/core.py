@@ -248,7 +248,6 @@ class Run:
         self.context_body = get_body(self._lines[self._body_start : endline])
         self._magic_func, names, futures = abracadabra(self)
         display_expr = self._magic_func._display_expr
-        has_print = "print" in self._magic_func._scoped.builtin_names
 
         if self._where == "remotely":
             if client is None:
@@ -258,6 +257,15 @@ class Run:
                 self._client_to_futures[client] = weak_futures
             else:
                 weak_futures = self._client_to_futures[client]
+
+            has_print = "print" in self._magic_func._scoped.builtin_names
+            capture_print = (
+                self._gather_data  # we're blocking anyway to gather data
+                or display_expr  # we need to display an expression (sync or async)
+                or has_print  # print is in the context body
+                or _supports_async_output()  # no need to block, so why not?
+            )
+
             to_scatter = self.data.keys() & self._magic_func._scoped.outer_scope.keys()
             if to_scatter:
                 # Scatter value in `self.data` that we need in this calculation.
@@ -279,7 +287,7 @@ class Run:
             magic_func = client.scatter(self._magic_func)
             weak_futures.add(magic_func)
             remote_dict = client.submit(
-                run_afar, magic_func, names, futures, pure=False, **submit_kwargs
+                run_afar, magic_func, names, futures, capture_print, pure=False, **submit_kwargs
             )
             weak_futures.add(remote_dict)
             magic_func.release()  # Let go ASAP
@@ -292,7 +300,7 @@ class Run:
                 weak_futures.add(repr_future)
             else:
                 repr_future = None
-            if display_expr or has_print or _supports_async_output():
+            if capture_print:
                 stdout_future = client.submit(get_afar, remote_dict, "_afar_stdout_")
                 weak_futures.add(stdout_future)
                 stderr_future = client.submit(get_afar, remote_dict, "_afar_stderr_")
@@ -313,7 +321,7 @@ class Run:
                     self.data[name] = future
                 remote_dict.release()  # Let go ASAP
 
-            if _supports_async_output():
+            if capture_print and _supports_async_output():
                 # Display in `out` cell when data is ready: non-blocking
                 from IPython.display import display
                 from ipywidgets import Output
@@ -324,7 +332,7 @@ class Run:
                 stdout_future.add_done_callback(
                     partial(_display_outputs, out, stderr_future, repr_future)
                 )
-            elif display_expr or has_print:
+            elif capture_print:
                 # blocks!
                 stdout_val = stdout_future.result()
                 stdout_future.release()
@@ -518,15 +526,25 @@ class RecordPrint:
         LocalPrint.printer(*args, **kwargs, file=file)
 
 
-def run_afar(magic_func, names, futures):
-    sfunc = magic_func._scoped.bind(futures)
-    with RecordPrint() as rec:
+def run_afar(magic_func, names, futures, capture_print):
+    if capture_print:
+        rec = RecordPrint()
+        if "print" in magic_func._scoped.builtin_names and "print" not in futures:
+            sfunc = magic_func._scoped.bind(futures, print=rec)
+        else:
+            sfunc = magic_func._scoped.bind(futures)
+        with rec:
+            results = sfunc()
+    else:
+        sfunc = magic_func._scoped.bind(futures)
         results = sfunc()
+
     rv = {key: results[key] for key in names}
     if magic_func._display_expr:
         rv["_afar_return_value_"] = results.return_value
-    rv["_afar_stdout_"] = rec.stdout.getvalue()
-    rv["_afar_stderr_"] = rec.stderr.getvalue()
+    if capture_print:
+        rv["_afar_stdout_"] = rec.stdout.getvalue()
+        rv["_afar_stderr_"] = rec.stderr.getvalue()
     return rv
 
 
