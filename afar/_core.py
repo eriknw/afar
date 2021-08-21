@@ -267,6 +267,8 @@ class Run:
 
                 out = Output()
                 display(out)
+                with out:
+                    print("\N{SPARKLES} Running afar... \N{SPARKLES}")
                 # Can we show `distributed.progress` right here?
                 stdout_future.add_done_callback(
                     partial(print_outputs_async, out, stderr_future, repr_future)

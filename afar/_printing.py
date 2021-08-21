@@ -78,6 +78,7 @@ def print_outputs_async(out, stderr_future, repr_future, stdout_future):
         repr_val = repr_future.result()
     else:
         repr_val = None
+    out.clear_output()
     if stdout_val or stderr_val or repr_val is not None:
         with out:
             if stdout_val:
