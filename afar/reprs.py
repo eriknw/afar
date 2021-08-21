@@ -3,17 +3,15 @@ import sys
 import traceback
 from types import CodeType, FunctionType
 
-try:
-    import IPython
-
-    def in_ipython():
-        return IPython.get_ipython() is not None
+from distributed.utils import is_kernel  # noqa
 
 
-except ImportError:
-
-    def in_ipython():
+def in_terminal():
+    if "IPython" not in sys.modules:  # IPython hasn't been imported
         return False
+    from IPython import get_ipython
+
+    return type(get_ipython()).__name__ == "TerminalInteractiveShell"
 
 
 if hasattr(CodeType, "replace"):
@@ -88,7 +86,9 @@ class AttrRecorder:
 
 def get_repr_methods():
     """List of repr methods that IPython/Jupyter tries to use"""
-    ip = IPython.get_ipython()
+    from IPython import get_ipython
+
+    ip = get_ipython()
     if ip is None:
         return
     attr_recorder = AttrRecorder()
@@ -101,6 +101,8 @@ def repr_afar(val, repr_methods):
 
     We call this on a remote object.
     """
+    if val is None:
+        return None
     for method_name in repr_methods:
         method = getattr(val, method_name, None)
         if method is None:
@@ -134,11 +136,15 @@ def display_repr(results):
     if is_exception:
         print(val, file=sys.stderr)
         return
+    if val is None and method_name is None:
+        return
     if method_name == "_ipython_display_":
         val._ipython_display_()
     else:
+        from IPython.display import display
+
         mimic = MimicRepr(val, method_name)
-        IPython.display.display(mimic)
+        display(mimic)
 
 
 class MimicRepr:
