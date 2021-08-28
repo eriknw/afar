@@ -2,6 +2,7 @@ import builtins
 import sys
 from io import StringIO
 from threading import Lock, local
+from time import sleep
 
 from ._reprs import display_repr
 
@@ -16,7 +17,7 @@ class LocalPrint(local):
         return self.printer(*args, **kwargs)
 
 
-class RecordPrint:
+class PrintRecorder:
     n = 0
     local_print = LocalPrint()
     print_lock = Lock()
@@ -27,17 +28,17 @@ class RecordPrint:
 
     def __enter__(self):
         with self.print_lock:
-            if RecordPrint.n == 0:
+            if PrintRecorder.n == 0:
                 LocalPrint.printer = builtins.print
                 builtins.print = self.local_print
-            RecordPrint.n += 1
+            PrintRecorder.n += 1
         self.local_print.printer = self
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         with self.print_lock:
-            RecordPrint.n -= 1
-            if RecordPrint.n == 0:
+            PrintRecorder.n -= 1
+            if PrintRecorder.n == 0:
                 builtins.print = LocalPrint.printer
         self.local_print.printer = LocalPrint.printer
         return False
@@ -72,18 +73,30 @@ def print_outputs_async(out, stderr_future, repr_future, stdout_future):
 
     This is used as a callback to `stdout_future`.
     """
-    stdout_val = stdout_future.result()
-    stderr_val = stderr_future.result()
-    if repr_future is not None:
-        repr_val = repr_future.result()
-    else:
-        repr_val = None
-    out.clear_output()
-    if stdout_val or stderr_val or repr_val is not None:
-        with out:
-            if stdout_val:
-                print(stdout_val, end="")
-            if stderr_val:
-                print(stderr_val, end="", file=sys.stderr)
+    try:
+        stdout_val = stdout_future.result()
+        out.clear_output()
+        count = 0
+        while out.outputs:
+            # See: https://github.com/jupyter-widgets/ipywidgets/issues/3260
+            count += 1
+            if count == 100:  # 0.5 seconds
+                # This doesn't appear to always clear correctly in JupyterLab.
+                # I don't know why.  I'm still investigating.
+                out.outputs = type(out.outputs)()  # is this safe?
+                break
+            sleep(0.005)
+        if stdout_val:
+            out.append_stdout(stdout_val)
+
+        stderr_val = stderr_future.result()
+        if stderr_val:
+            out.append_stderr(stderr_val)
+
+        if repr_future is not None:
+            repr_val = repr_future.result()
             if repr_val is not None:
-                display_repr(repr_val)
+                display_repr(repr_val, out=out)
+    except Exception as exc:
+        print(exc, file=sys.stderr)
+        raise
