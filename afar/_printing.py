@@ -76,8 +76,15 @@ def print_outputs_async(out, stderr_future, repr_future, stdout_future):
     try:
         stdout_val = stdout_future.result()
         out.clear_output()
+        count = 0
         while out.outputs:
             # See: https://github.com/jupyter-widgets/ipywidgets/issues/3260
+            count += 1
+            if count == 100:  # 0.5 seconds
+                # This doesn't appear to always clear correctly in JupyterLab.
+                # I don't know why.  I'm still investigating.
+                out.outputs = type(out.outputs)()  # is this safe?
+                break
             sleep(0.005)
         if stdout_val:
             out.append_stdout(stdout_val)
