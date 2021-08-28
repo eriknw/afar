@@ -5,8 +5,8 @@ from weakref import WeakKeyDictionary, WeakSet
 
 from dask import distributed
 
-from ._magic import abracadabra
-from ._printing import RecordPrint, print_outputs, print_outputs_async
+from ._abra import cadabra
+from ._printing import PrintRecorder, print_outputs, print_outputs_async
 from ._reprs import repr_afar
 from ._utils import is_kernel, supports_async_output
 from ._where import find_where
@@ -185,7 +185,7 @@ class Run:
             endline = maxline + 5  # give us some wiggle room
 
         self.context_body = get_body(self._lines[self._body_start : endline])
-        self._magic_func, names, futures = abracadabra(self)
+        self._magic_func, names, futures = cadabra(self)
         display_expr = self._magic_func._display_expr
 
         if self._where == "remotely":
@@ -267,9 +267,7 @@ class Run:
 
                 out = Output()
                 display(out)
-                with out:
-                    print("\N{SPARKLES} Running afar... \N{SPARKLES}")
-                # Can we show `distributed.progress` right here?
+                out.append_stdout("\N{SPARKLES} Running afar... \N{SPARKLES}")
                 stdout_future.add_done_callback(
                     partial(print_outputs_async, out, stderr_future, repr_future)
                 )
@@ -316,7 +314,7 @@ class Get(Run):
 
 def run_afar(magic_func, names, futures, capture_print):
     if capture_print:
-        rec = RecordPrint()
+        rec = PrintRecorder()
         if "print" in magic_func._scoped.builtin_names and "print" not in futures:
             sfunc = magic_func._scoped.bind(futures, print=rec)
         else:

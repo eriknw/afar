@@ -81,7 +81,7 @@ class MagicFunction:
         self._scoped = scoped_function(func, outer_scope)
 
 
-def abracadabra(runner):
+def cadabra(runner):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(runner.context_body)

@@ -84,18 +84,28 @@ class MimicRepr:
         return self.val
 
 
-def display_repr(results):
+def display_repr(results, out=None):
     """Display results from `repr_afar` locally in IPython/Jupyter"""
     val, method_name, is_exception = results
     if is_exception:
-        print(val, file=sys.stderr)
+        if out is None:
+            print(val, file=sys.stderr)
+        else:
+            out.append_stderr(val)
         return
     if val is None and method_name is None:
         return
-    if method_name == "_ipython_display_":
-        val._ipython_display_()
-    else:
-        from IPython.display import display
 
+    from IPython.display import display
+
+    if method_name == "_ipython_display_":
+        if out is None:
+            display(val)
+        else:
+            out.append_display_data(val)
+    else:
         mimic = MimicRepr(val, method_name)
-        display(mimic)
+        if out is None:
+            display(mimic)
+        else:
+            out.append_display_data(mimic)
