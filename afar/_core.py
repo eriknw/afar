@@ -169,9 +169,6 @@ class Run:
         if where is None:
             # The exception is valid
             return False
-        self._where = where.where
-        submit_kwargs = where.submit_kwargs or {}
-        client = where.client
 
         # What line does the context end?
         maxline = self._body_start
@@ -184,11 +181,44 @@ class Run:
         else:
             endline = maxline + 5  # give us some wiggle room
 
-        self.context_body = get_body(self._lines[self._body_start : endline])
-        self._magic_func, names, futures = cadabra(self)
-        display_expr = self._magic_func._display_expr
+        context_body = get_body(self._lines[self._body_start : endline])
+        self._run(
+            where.where,
+            context_body,
+            self.names,
+            self.data,
+            client=where.client,
+            submit_kwargs=where.submit_kwargs,
+            global_ns=frame.f_globals,
+            local_ns=frame.f_locals,
+        )
+        return True
 
-        if self._where == "remotely":
+    def _run(
+        self,
+        where,
+        context_body,
+        names,
+        data,
+        *,
+        global_ns,
+        local_ns,
+        client=None,
+        submit_kwargs=None,
+        return_expr=False,
+    ):
+        self._where = where
+        self.context_body = context_body
+        if submit_kwargs is None:
+            submit_kwargs = {}
+
+        self._magic_func, names, futures = cadabra(
+            context_body, where, names, data, global_ns, local_ns
+        )
+        display_expr = self._magic_func._display_expr
+        return_future = None
+
+        if where == "remotely":
             if client is None:
                 client = distributed.client._get_global_client()
             if client not in self._client_to_futures:
@@ -205,21 +235,21 @@ class Run:
                 or supports_async_output()  # no need to block, so why not?
             )
 
-            to_scatter = self.data.keys() & self._magic_func._scoped.outer_scope.keys()
+            to_scatter = data.keys() & self._magic_func._scoped.outer_scope.keys()
             if to_scatter:
-                # Scatter value in `self.data` that we need in this calculation.
+                # Scatter value in `data` that we need in this calculation.
                 # This moves data from local to remote, then keeps it remote.
-                # Things in `self.data` may get reused, so it can be helpful to
-                # move them.  We could move everything in `self.data`, but we
+                # Things in `data` may get reused, so it can be helpful to
+                # move them.  We could move everything in `data`, but we
                 # only move the things we need.  We could also scatter everything
                 # in `self._magic_func._scoped.outer_scope`, but we can't reuse
                 # them, because they may get modified locally.
                 to_scatter = list(to_scatter)
                 # I'm afraid to hash, because users may accidentally mutate things.
-                scattered = client.scatter([self.data[key] for key in to_scatter], hash=False)
+                scattered = client.scatter([data[key] for key in to_scatter], hash=False)
                 scattered = dict(zip(to_scatter, scattered))
                 futures.update(scattered)
-                self.data.update(scattered)
+                data.update(scattered)
                 for key in to_scatter:
                     del self._magic_func._scoped.outer_scope[key]
             # Scatter magic_func to avoid "Large object" UserWarning
@@ -231,12 +261,18 @@ class Run:
             weak_futures.add(remote_dict)
             magic_func.release()  # Let go ASAP
             if display_expr:
+                return_future = client.submit(get_afar, remote_dict, "_afar_return_value_")
                 repr_future = client.submit(
                     repr_afar,
-                    client.submit(get_afar, remote_dict, "_afar_return_value_"),
+                    return_future,
                     self._magic_func._repr_methods,
                 )
                 weak_futures.add(repr_future)
+                if return_expr:
+                    weak_futures.add(return_future)
+                else:
+                    return_future.release()  # Let go ASAP
+                    return_future = None
             else:
                 repr_future = None
             if capture_print:
@@ -252,12 +288,12 @@ class Run:
                 weak_futures.update(futures_to_name)
                 remote_dict.release()  # Let go ASAP
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
-                    self.data[futures_to_name[future]] = result
+                    data[futures_to_name[future]] = result
             else:
                 for name in names:
                     future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
                     weak_futures.add(future)
-                    self.data[name] = future
+                    data[name] = future
                 remote_dict.release()  # Let go ASAP
 
             if capture_print and supports_async_output():
@@ -274,24 +310,26 @@ class Run:
             elif capture_print:
                 # blocks!
                 print_outputs(stdout_future, stderr_future, repr_future)
-        elif self._where == "locally":
+        elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
             for name in names:
-                self.data[name] = results[name]
+                data[name] = results[name]
             if display_expr:
                 from IPython.dislpay import display
 
                 display(results.return_value)
-        elif self._where == "later":
-            return True
+                if return_expr:
+                    return_future = results.return_value
+        elif where == "later":
+            return
         else:
-            raise ValueError(f"Don't know where {self._where!r} is")
+            raise ValueError(f"Don't know where {where!r} is")
 
         # Try to update the variables in the frame.
         # This currently only works if f_locals is f_globals, or if tracing (don't ask).
-        frame.f_locals.update((name, self.data[name]) for name in names)
-        return True
+        local_ns.update((name, data[name]) for name in names)
+        return return_future
 
     def cancel(self, *, client=None, force=False):
         """Cancel pending tasks"""
