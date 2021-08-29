@@ -2,7 +2,6 @@ import builtins
 import sys
 from io import StringIO
 from threading import Lock, local
-from time import sleep
 
 from ._reprs import display_repr
 
