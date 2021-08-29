@@ -81,28 +81,26 @@ class MagicFunction:
         self._scoped = scoped_function(func, outer_scope)
 
 
-def cadabra(runner):
+def cadabra(context_body, where, names, data, global_ns, local_ns):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
-    source = "def _afar_magic_():\n" + "".join(runner.context_body)
-    func, display_expr = create_func(source, runner._frame.f_globals, is_kernel())
+    source = "def _afar_magic_():\n" + "".join(context_body)
+    func, display_expr = create_func(source, global_ns, is_kernel())
 
     # If no variable names were given, only get the last assignment
-    names = runner.names
     if not names:
         for inst in list(dis.get_instructions(func)):
             if inst.opname in {"STORE_NAME", "STORE_FAST", "STORE_DEREF", "STORE_GLOBAL"}:
                 names = (inst.argval,)
 
     # Use innerscope!  We only keep the globals, locals, and closures we need.
-    scoped = scoped_function(func, runner.data)
+    scoped = scoped_function(func, data)
     if scoped.missing:
         # Gather the necessary closures and locals
-        f_locals = runner._frame.f_locals
-        update = {key: f_locals[key] for key in scoped.missing if key in f_locals}
+        update = {key: local_ns[key] for key in scoped.missing if key in local_ns}
         scoped = scoped.bind(update)
 
-    if runner._where == "remotely":
+    if where == "remotely":
         # Get ready to submit to dask.distributed by separating the Futures.
         futures = {
             key: val

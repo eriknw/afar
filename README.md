@@ -12,7 +12,7 @@
 
 **To install:** `pip install afar`
 
-`afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers.  For example:
+`afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers and [IPython magics](#Magic!).  For example:
 ```python
 import afar
 from dask.distributed import Client
@@ -52,16 +52,44 @@ with afar.get, remotely:
     five = two + three
 assert five == 5
 ```
-If using IPython/Jupyter, the rich repr of the final expression will be displayed if it's not an assignment:
+## Interactivity in Jupyter
+There are several enhancements when using `afar` in Jupyter Notebook or Qt console, JupyterLab, or any IPython-based frontend that supports rich display.
+
+The rich repr of the final expression will be displayed if it's not an assignment:
 ```python
 with afar.run, remotely:
     three + seven
 # displays 10!
 ```
 
-### Is this a good idea?
+Printing is captured and displayed locally:
+```python
+with afar.run, remotely:
+    print(three)
+    print(seven, file=sys.stderr)
+# 3
+# 7
+```
+These are done asynchronously using `ipywidgets`.
 
-I don't know!
+### Magic!
+First load `afar` magic extension:
+```python
+%load_ext afar
+```
+Now you can use `afar` as line or cell magic.  `%%afar` is like `with afar.run, remotely:`.  It can optionally accept a list of variable names to save:
+```python
+%%afar x, y
+x = 1
+y = x + 1
+```
+and
+```python
+z = %afar x + y
+```
+## Is this a good idea?
+
+I don't know, but it sure is a joy to use 😃 !
 
 For motivation, see https://github.com/dask/distributed/issues/4003
 
@@ -84,9 +112,9 @@ This now works!  Keyword arguments to `remotely` will be passed to [`client.subm
 
 I don't know about you, but I think this is starting to look and feel kinda nice, and it could probably be even better :)
 
-### Caveats and Gotchas
+## Caveats and Gotchas
 
-#### Repeatedly copying data
+### Repeatedly copying data
 
 `afar` automatically gets the data it needs--and only the data it needs--from the outer scope
 and sends it to the Dask cluster to compute on.  Since we don't know whether local data has been modified
@@ -119,5 +147,15 @@ with afar.run, remotely:
     B = A + 1
 # A and B are now both Futures; their data is on the cluster
 ```
+### Mutating remote data
+As with any Dask workload, one should be careful to not modify remote data that may be reused.
 
-### *This code is highly experimental and magical!*
+### Mutating local data
+Similarly, code run remotely isn't able to mutate local variables.  For example:
+```python
+d = {}
+with afar.run, remotely:
+    d['key'] = 'value'
+# d == {}
+```
+## *✨ This code is highly experimental and magical! ✨*
