@@ -12,7 +12,7 @@
 
 **To install:** `pip install afar`
 
-`afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers and [IPython magics](#Magic!).  For example:
+`afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers and [IPython magics](#Magic).  For example:
 ```python
 import afar
 from dask.distributed import Client
@@ -159,3 +159,4 @@ with afar.run, remotely:
 # d == {}
 ```
 ## *✨ This code is highly experimental and magical! ✨*
+
