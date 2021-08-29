@@ -30,12 +30,15 @@ jobs:
         run: |
           pip install pytest coverage
           coverage run --branch -m pytest
-      - name: Style checks
+      - name: Black
+        run: |
+          pip install black
+          black afar *.py --check --diff
+      - name: Flake8
         if: (! contains(matrix.python-version, 'pypy'))
         run: |
-          pip install black flake8
+          pip install flake8
           flake8 .
-          black afar *.py --check --diff
       - name: Coverage
         # if: (! contains(matrix.python-version, 'pypy'))
         env:
