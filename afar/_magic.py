@@ -47,8 +47,8 @@ class AfarMagic(Magics):
         ::
 
             In [1]: %%afar x, y
-            ...: x = 1
-            ...: y = x + 1
+               ...: x = 1
+               ...: y = x + 1
 
             In [2]: z = %afar x + y
 
