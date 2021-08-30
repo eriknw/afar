@@ -73,7 +73,6 @@ class AfarMagic(Magics):
         if "c" in opts and "client" in opts:
             raise UsageError("-c and --client options may not be used at the same time")
         where = remotely
-        client = None
 
         not_found = "argument not found in local namespace"
         if "r" in opts or "run" in opts:
@@ -84,6 +83,7 @@ class AfarMagic(Magics):
                 raise UsageError(f"-r or --run argument must be of type Run; got: {type(runner)}")
         else:
             runner = run()
+        client = runner.client
 
         data = runner.data
         if "d" in opts or "data" in opts:
@@ -103,7 +103,8 @@ class AfarMagic(Magics):
                 raise UsageError(
                     f"-w or --where argument must be of type Where; got: {type(where)}"
                 )
-            client = where.client
+            if client is None:
+                client = where.client
 
         if "c" in opts or "client" in opts:
             client = opts.get("c", opts.get("client"))
