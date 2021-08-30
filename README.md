@@ -1,5 +1,5 @@
 # **Afar**
-[![Python Version](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%20PyPy-blue)](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9)
+[![Python Version](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9-blue)](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9-blue)
 [![Version](https://img.shields.io/pypi/v/afar.svg)](https://pypi.org/project/afar/)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/eriknw/afar/blob/main/LICENSE)
 [![Build Status](https://github.com/eriknw/afar/workflows/Test/badge.svg)](https://github.com/eriknw/afar/actions)
