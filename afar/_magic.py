@@ -4,7 +4,7 @@ from dask.distributed import Client
 from IPython.core.error import UsageError
 from IPython.core.magic import Magics, line_cell_magic, magics_class, needs_local_scope
 
-from ._core import Run, run
+from ._core import Run, get, run
 from ._where import Where, remotely
 
 
@@ -16,13 +16,16 @@ class AfarMagic(Magics):
         """Execute the cell on a dask.distributed cluster.
 
         Usage, in line mode:
-            %afar [-r run -d data -w where -c client] code_to_run
+            %afar [-g -r run -d data -w where -c client] code_to_run
         Usage, in cell mode
-            %%afar [-r run -d data -w where -c client <variable_names>]
+            %%afar [-g -r run -d data -w where -c client <variable_names>]
             code...
             code...
 
         Options:
+
+          -g/--get
+            Get results as values, not as futures.  This uses `afar.get` instead of `afar.run`.
 
           -r/--run <run>
             A `Run` object from the local namespace such as `run = afar.run(data=mydata)`
@@ -55,7 +58,8 @@ class AfarMagic(Magics):
         """
         opts, line = self.parse_options(
             line,
-            "r:d:w:c:",
+            "gr:d:w:c:",
+            "get",
             "run=",
             "data=",
             "where=",
@@ -81,6 +85,8 @@ class AfarMagic(Magics):
                 raise UsageError(f"Variable name {runner!r} for -r or --run {not_found}")
             if not isinstance(runner, Run):
                 raise UsageError(f"-r or --run argument must be of type Run; got: {type(runner)}")
+        elif "g" in opts or "get" in opts:
+            runner = get()
         else:
             runner = run()
         client = runner.client
