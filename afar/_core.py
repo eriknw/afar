@@ -60,9 +60,10 @@ def get_body(lines):
 class Run:
     _gather_data = False
 
-    def __init__(self, *names, data=None):
+    def __init__(self, *names, client=None, data=None):
         self.names = names
         self.data = data
+        self.client = client
         self.context_body = None
         # afar.run can be used as a singleton without calling it.
         # If we do this, we shouldn't keep data around.
@@ -76,13 +77,15 @@ class Run:
         self._body_start = None
         self._lines = None
 
-    def __call__(self, *names, data=None):
+    def __call__(self, *names, client=None, data=None):
         if data is None:
             if self.data is None:
                 data = {}
             else:
                 data = self.data
-        return type(self)(*names, data=data)
+        if client is None:
+            client = self.client
+        return type(self)(*names, client=client, data=data)
 
     def __enter__(self):
         self._frame = currentframe().f_back
@@ -143,33 +146,34 @@ class Run:
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self._where = None
+        if self.data is None:
+            if exc_type is None:
+                raise RuntimeError("uh oh!")
+            return False
+        if exc_type is None or exc_traceback.tb_frame is not self._frame:
+            return False
+        where = find_where(exc_type, exc_value)
+        if where is None:
+            # The exception is valid
+            return False
+
         try:
-            return self._exit(exc_type, exc_value, exc_traceback)
-        except KeyboardInterrupt:
+            return self._exit(where)
+        except KeyboardInterrupt as exc:
             # Cancel all pending tasks
             if self._where == "remotely":
                 self.cancel()
-            raise
+            raise exc from None
+        except Exception as exc:
+            raise exc from None
         finally:
             self._frame = None
             self._lines = None
             if self._is_singleton:
                 self.data = None
 
-    def _exit(self, exc_type, exc_value, exc_traceback):
+    def _exit(self, where):
         frame = self._frame
-        if self.data is None:
-            if exc_type is None:
-                raise RuntimeError("uh oh!")
-            return False
-        if exc_type is None or exc_traceback.tb_frame is not frame:
-            return False
-
-        where = find_where(exc_type, exc_value)
-        if where is None:
-            # The exception is valid
-            return False
-
         # What line does the context end?
         maxline = self._body_start
         for offset, line in dis.findlinestarts(frame.f_code):
@@ -187,7 +191,7 @@ class Run:
             context_body,
             self.names,
             self.data,
-            client=where.client,
+            client=self.client or where.client,
             submit_kwargs=where.submit_kwargs,
             global_ns=frame.f_globals,
             local_ns=frame.f_locals,
@@ -221,6 +225,11 @@ class Run:
         if where == "remotely":
             if client is None:
                 client = distributed.client._get_global_client()
+                if client is None:
+                    raise TypeError(
+                        "No dask.distributed client found.  "
+                        "You must create and connect to a Dask cluster before using afar."
+                    )
             if client not in self._client_to_futures:
                 weak_futures = WeakSet()
                 self._client_to_futures[client] = weak_futures
