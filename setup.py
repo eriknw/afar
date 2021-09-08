@@ -13,6 +13,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Erik Welch",
+    author_email="erik.n.welch@gmail.com",
     url="https://github.com/eriknw/afar",
     packages=find_packages(),
     license="BSD",

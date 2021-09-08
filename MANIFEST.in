@@ -1,6 +1,9 @@
+recursive-include afar *.py
 include setup.py
+include setup.cfg
 include README.md
 include LICENSE
 include MANIFEST.in
 include versioneer.py
+include requirements.txt
 include afar/_version.py
