@@ -9,7 +9,7 @@ setup(
     name="afar",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description="Run code on a dask worker via a context manager",
+    description="Run code on a Dask cluster via a context manager or IPython magic",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Erik Welch",
