@@ -10,8 +10,17 @@
 > _Robert A. Heinlein_
 <hr>
 
-**To install:** `pip install afar`
+## Installation
+`afar` may be installed with pip:
+```bash
+pip install afar
+```
+or with [conda](https://docs.conda.io/en/latest/):
+```bash
+conda install -c conda-forge afar
+```
 
+## What is it?
 `afar` allows you to run code on a remote [Dask](https://dask.org/) [cluster](https://distributed.dask.org/en/latest/) using context managers and [IPython magics](#Magic).  For example:
 ```python
 import afar
@@ -93,9 +102,9 @@ I don't know, but it sure is a joy to use 😃 !
 
 For motivation, see https://github.com/dask/distributed/issues/4003
 
-It's natural to be skeptical of unconventional syntax.  Often times, I don't think it's obvious whether new syntax will be nice to use, and you really just need to try it out and see.
+It's natural to be skeptical of unconventional syntax.  And magic.  `afar` is both unconventional and magical, yet it also works well and is surprisingly *fun*!  Why not give it a try to see what you think?
 
-We're still exploring the usability of `afar`.  If you try it out, please share what you think, and ask yourself questions such as:
+We're still exploring the usability of `afar` [and want to hear what you think](https://github.com/eriknw/afar/discussions).  As you're learning `afar`, please ask yourself questions such as:
 - can we spell anything better?
 - does this offer opportunities?
 - what is surprising?
@@ -143,7 +152,7 @@ Here's a nifty trick to use if you're in an IPython notebook: use `data=globals(
 ```python
 run = afar.run(data=globals())
 A = np.arange(10**7)
-with afar.run, remotely:
+with run, remotely:
     B = A + 1
 # A and B are now both Futures; their data is on the cluster
 ```
