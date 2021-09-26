@@ -21,7 +21,8 @@ class PrintRecorder:
     local_print = LocalPrint()
     print_lock = Lock()
 
-    def __init__(self, key):
+    def __init__(self, channel, key):
+        self.channel = channel
         self.key = key
 
     def __enter__(self):
@@ -57,4 +58,4 @@ class PrintRecorder:
             except ValueError:
                 pass
             else:
-                worker.log_event("afar-print", (self.key, stream_name, file.getvalue()))
+                worker.log_event(self.channel, (self.key, stream_name, file.getvalue()))
