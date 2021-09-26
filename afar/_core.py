@@ -168,14 +168,6 @@ class Run:
             else:
                 weak_futures = self._client_to_futures[client]
 
-            # Should we always capture print now that it's handled async?
-            has_print = "print" in self._magic_func._scoped.builtin_names
-            capture_print = (
-                display_expr  # we need to display an expression (sync or async)
-                or has_print  # print is in the context body
-                or supports_async_output()  # no need to block, so why not?
-            )
-
             to_scatter = data.keys() & self._magic_func._scoped.outer_scope.keys()
             if to_scatter:
                 # Scatter value in `data` that we need in this calculation.
@@ -194,6 +186,7 @@ class Run:
                 for key in to_scatter:
                     del self._magic_func._scoped.outer_scope[key]
 
+            capture_print = True
             if capture_print and "afar-print" not in client._event_handlers:
                 client.subscribe_topic("afar-print", self._handle_print)
             async_print = capture_print and supports_async_output()
@@ -285,17 +278,25 @@ class Run:
         # XXX: can we assume all messages from a single task arrive in FIFO order?
         _, msg = event
         key, action, payload = msg
+        if key not in cls._outputs:
+            return
         out, is_updated = cls._outputs[key]
         if out is not None:
-            if not is_updated:
-                # Clear the "Running afar..." message
-                out.outputs = type(out.outputs)()
-                cls._outputs[key][1] = True  # is updated
-            # ipywidgets.Output is pretty slow if there are lots of messages
-            if action == "stdout":
-                out.append_stdout(payload)
-            elif action == "stderr":
-                out.append_stderr(payload)
+            if action == "begin":
+                if is_updated:
+                    out.outputs = type(out.outputs)()
+                    out.append_stdout("\N{SPARKLES} Running afar... (restarted) \N{SPARKLES}")
+                    cls._outputs[key][1] = False  # is not updated
+            else:
+                if not is_updated:
+                    # Clear the "Running afar..." message
+                    out.outputs = type(out.outputs)()
+                    cls._outputs[key][1] = True  # is updated
+                # ipywidgets.Output is pretty slow if there are lots of messages
+                if action == "stdout":
+                    out.append_stdout(payload)
+                elif action == "stderr":
+                    out.append_stderr(payload)
         elif action == "stdout":
             print(payload, end="")
         elif action == "stderr":
@@ -322,6 +323,7 @@ def run_afar(magic_func, names, futures, capture_print, unique_key):
             worker = None
     try:
         if capture_print and worker is not None:
+            worker.log_event("afar-print", (unique_key, "begin", None))
             rec = PrintRecorder(unique_key)
             if "print" in magic_func._scoped.builtin_names and "print" not in futures:
                 sfunc = magic_func._scoped.bind(futures, print=rec)
