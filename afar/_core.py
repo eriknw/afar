@@ -338,6 +338,8 @@ def run_afar(magic_func, names, futures, capture_print, unique_key):
         rv = {key: results[key] for key in names}
 
         if magic_func._display_expr and worker is not None:
+            # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
+            # better to add the return value to rv and call repr_afar as a separate task.
             pretty_repr = repr_afar(results.return_value, magic_func._repr_methods)
             if pretty_repr is not None:
                 worker.log_event("afar-print", (unique_key, "display_expr", pretty_repr))
