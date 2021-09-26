@@ -1,13 +1,16 @@
 import dis
+import sys
 from functools import partial
 from inspect import currentframe, findsource
+from uuid import uuid4
 from weakref import WeakKeyDictionary, WeakSet
 
 from dask import distributed
+from dask.distributed import get_worker
 
 from ._abra import cadabra
-from ._printing import PrintRecorder, print_outputs, print_outputs_async
-from ._reprs import repr_afar
+from ._printing import PrintRecorder
+from ._reprs import display_repr, repr_afar
 from ._utils import is_kernel, supports_async_output
 from ._where import find_where
 
@@ -59,6 +62,8 @@ def get_body(lines):
 
 class Run:
     _gather_data = False
+    # Used to update outputs asynchronously
+    _outputs = {}
 
     def __init__(self, *names, client=None, data=None):
         self.names = names
@@ -261,11 +266,29 @@ class Run:
                 data.update(scattered)
                 for key in to_scatter:
                     del self._magic_func._scoped.outer_scope[key]
+
+            if capture_print and "afar-print" not in client._event_handlers:
+                client.subscribe_topic("afar-print", self._handle_print)
+            async_print = capture_print and supports_async_output()
+            if capture_print:
+                unique_key = uuid4().hex
+                self._setup_print(unique_key, async_print)
+            else:
+                unique_key = None
+
             # Scatter magic_func to avoid "Large object" UserWarning
-            magic_func = client.scatter(self._magic_func)
+            magic_func = client.scatter(self._magic_func, hash=False)
             weak_futures.add(magic_func)
+
             remote_dict = client.submit(
-                run_afar, magic_func, names, futures, capture_print, pure=False, **submit_kwargs
+                run_afar,
+                magic_func,
+                names,
+                futures,
+                capture_print,
+                unique_key,
+                pure=False,
+                **submit_kwargs,
             )
             weak_futures.add(remote_dict)
             magic_func.release()  # Let go ASAP
@@ -284,11 +307,13 @@ class Run:
                     return_future = None
             else:
                 repr_future = None
+
             if capture_print:
-                stdout_future = client.submit(get_afar, remote_dict, "_afar_stdout_")
-                weak_futures.add(stdout_future)
-                stderr_future = client.submit(get_afar, remote_dict, "_afar_stderr_")
-                weak_futures.add(stderr_future)
+                obj = repr_future if display_expr else remote_dict
+                obj.add_done_callback(
+                    partial(self._finalize_print, self._outputs[unique_key], display_expr)
+                )
+
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
@@ -304,21 +329,6 @@ class Run:
                     weak_futures.add(future)
                     data[name] = future
                 remote_dict.release()  # Let go ASAP
-
-            if capture_print and supports_async_output():
-                # Display in `out` cell when data is ready: non-blocking
-                from IPython.display import display
-                from ipywidgets import Output
-
-                out = Output()
-                display(out)
-                out.append_stdout("\N{SPARKLES} Running afar... \N{SPARKLES}")
-                stdout_future.add_done_callback(
-                    partial(print_outputs_async, out, stderr_future, repr_future)
-                )
-            elif capture_print:
-                # blocks!
-                print_outputs(stdout_future, stderr_future, repr_future)
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
@@ -352,6 +362,55 @@ class Run:
             )
             weak_futures.clear()
 
+    def _setup_print(self, key, async_print):
+        if async_print:
+            from IPython.display import display
+            from ipywidgets import Output
+
+            out = Output()
+            display(out)
+            out.append_stdout("\N{SPARKLES} Running afar... \N{SPARKLES}")
+        else:
+            out = None
+        self._outputs[key] = [out, False]  # False means has not been updated
+
+    @classmethod
+    def _handle_print(cls, event):
+        # XXX: can we assume all messages from a single task arrive in FIFO order?
+        _, msg = event
+        key, stream_name, string = msg
+        out, is_updated = cls._outputs[key]
+        if out is not None:
+            if not is_updated:
+                # Clear the "Running afar..." message
+                out.outputs = type(out.outputs)()
+                cls._outputs[key][1] = True  # is updated
+            if stream_name == "stdout":
+                out.append_stdout(string)
+            elif stream_name == "stderr":
+                out.append_stderr(string)
+        elif stream_name == "stdout":
+            print(string, end="")
+        elif stream_name == "stderr":
+            print(string, end="", file=sys.stderr)
+        if stream_name == "finish":
+            del cls._outputs[key]
+
+    def _finalize_print(self, info, display_expr, future):
+        # Can we move this to `_handle_print`?
+        # _handle_print for this key may get called *after* _finalize_print
+        out, is_updated = info
+        if out is not None and not is_updated:
+            # Clear the "Running afar..." message to indicate it's finished
+            # out.clear_output()  # Not thread-safe!
+            # See: https://github.com/jupyter-widgets/ipywidgets/issues/3260
+            out.outputs = type(out.outputs)()  # current workaround
+            info[1] = True  # is updated
+        if display_expr:
+            repr_val = future.result()
+            if repr_val is not None:
+                display_repr(repr_val, out=out)
+
 
 class Get(Run):
     """Unlike ``run``, ``get`` automatically gathers the data locally"""
@@ -359,25 +418,31 @@ class Get(Run):
     _gather_data = True
 
 
-def run_afar(magic_func, names, futures, capture_print):
-    if capture_print:
-        rec = PrintRecorder()
-        if "print" in magic_func._scoped.builtin_names and "print" not in futures:
-            sfunc = magic_func._scoped.bind(futures, print=rec)
+def run_afar(magic_func, names, futures, capture_print, unique_key):
+    try:
+        if capture_print:
+            rec = PrintRecorder(unique_key)
+            if "print" in magic_func._scoped.builtin_names and "print" not in futures:
+                sfunc = magic_func._scoped.bind(futures, print=rec)
+            else:
+                sfunc = magic_func._scoped.bind(futures)
+            with rec:
+                results = sfunc()
         else:
             sfunc = magic_func._scoped.bind(futures)
-        with rec:
             results = sfunc()
-    else:
-        sfunc = magic_func._scoped.bind(futures)
-        results = sfunc()
 
-    rv = {key: results[key] for key in names}
-    if magic_func._display_expr:
-        rv["_afar_return_value_"] = results.return_value
-    if capture_print:
-        rv["_afar_stdout_"] = rec.stdout.getvalue()
-        rv["_afar_stderr_"] = rec.stderr.getvalue()
+        rv = {key: results[key] for key in names}
+        if magic_func._display_expr:
+            rv["_afar_return_value_"] = results.return_value
+    finally:
+        if capture_print:
+            try:
+                worker = get_worker()
+            except ValueError:
+                pass
+            else:
+                worker.log_event("afar-print", (unique_key, "finish", None))
     return rv
 
 

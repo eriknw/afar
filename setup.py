@@ -1,5 +1,6 @@
+from setuptools import find_packages, setup
+
 import versioneer
-from setuptools import setup, find_packages
 
 install_requires = open("requirements.txt").read().strip().split("\n")
 with open("README.md") as f:
