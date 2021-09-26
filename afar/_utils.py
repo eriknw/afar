@@ -1,3 +1,4 @@
+import builtins
 import sys
 from types import CodeType
 
@@ -5,11 +6,15 @@ from distributed.utils import is_kernel
 
 
 def is_terminal():
-    if "IPython" not in sys.modules:  # IPython hasn't been imported
+    if not is_ipython():
         return False
     from IPython import get_ipython
 
     return type(get_ipython()).__name__ == "TerminalInteractiveShell"
+
+
+def is_ipython():
+    return hasattr(builtins, "__IPYTHON__") and "IPython" in sys.modules
 
 
 def supports_async_output():

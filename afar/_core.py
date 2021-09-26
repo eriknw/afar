@@ -1,7 +1,6 @@
 import dis
 import sys
-from functools import partial
-from inspect import currentframe, findsource
+from inspect import currentframe
 from uuid import uuid4
 from weakref import WeakKeyDictionary, WeakSet
 
@@ -9,55 +8,11 @@ from dask import distributed
 from dask.distributed import get_worker
 
 from ._abra import cadabra
+from ._inspect import get_body, get_body_start, get_lines
 from ._printing import PrintRecorder
 from ._reprs import display_repr, repr_afar
-from ._utils import is_kernel, supports_async_output
+from ._utils import supports_async_output
 from ._where import find_where
-
-
-def get_body_start(lines, with_start):
-    line = lines[with_start]
-    stripped = line.lstrip()
-    body = line[: len(line) - len(stripped)] + " pass\n"
-    body *= 2
-    with_lines = [stripped]
-    try:
-        code = compile(stripped, "<exec>", "exec")
-    except Exception:
-        pass
-    else:
-        raise RuntimeError(
-            "Failed to analyze the context!  When using afar, "
-            "please put the context body on a new line."
-        )
-    for i, line in enumerate(lines[with_start:]):
-        if i > 0:
-            with_lines.append(line)
-        if ":" in line:
-            source = "".join(with_lines) + body
-            try:
-                code = compile(source, "<exec>", "exec")
-            except Exception:
-                pass
-            else:
-                num_with = code.co_code.count(dis.opmap["SETUP_WITH"])
-                body_start = with_start + i + 1
-                return num_with, body_start
-    raise RuntimeError("Failed to analyze the context!")
-
-
-def get_body(lines):
-    head = "def f():\n with x:\n  "
-    tail = " pass\n pass\n"
-    while lines:
-        source = head + "  ".join(lines) + tail
-        try:
-            compile(source, "<exec>", "exec")
-        except Exception:
-            lines.pop()
-        else:
-            return lines
-    raise RuntimeError("Failed to analyze the context body!")
 
 
 class Run:
@@ -99,36 +54,8 @@ class Run:
             if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
-        try:
-            lines, offset = findsource(self._frame)
-        except OSError:
-            # Try to fine the source if we are in %%time or %%timeit magic
-            if self._frame.f_code.co_filename in {"<timed exec>", "<magic-timeit>"} and is_kernel():
-                from IPython import get_ipython
 
-                ip = get_ipython()
-                if ip is None:
-                    raise
-                cell = ip.history_manager._i00  # The current cell!
-                lines = cell.splitlines(keepends=True)
-                # strip the magic
-                for i, line in enumerate(lines):
-                    if line.strip().startswith("%%time"):
-                        lines = lines[i + 1 :]
-                        break
-                else:
-                    raise
-                # strip blank lines
-                for i, line in enumerate(lines):
-                    if line.strip():
-                        if i:
-                            lines = lines[i:]
-                        lines[-1] += "\n"
-                        break
-                else:
-                    raise
-            else:
-                raise
+        lines = get_lines(self._frame)
 
         while not lines[with_lineno].lstrip().startswith("with"):
             with_lineno -= 1
@@ -241,10 +168,10 @@ class Run:
             else:
                 weak_futures = self._client_to_futures[client]
 
+            # Should we always capture print now that it's handled async?
             has_print = "print" in self._magic_func._scoped.builtin_names
             capture_print = (
-                self._gather_data  # we're blocking anyway to gather data
-                or display_expr  # we need to display an expression (sync or async)
+                display_expr  # we need to display an expression (sync or async)
                 or has_print  # print is in the context body
                 or supports_async_output()  # no need to block, so why not?
             )
@@ -292,27 +219,6 @@ class Run:
             )
             weak_futures.add(remote_dict)
             magic_func.release()  # Let go ASAP
-            if display_expr:
-                return_future = client.submit(get_afar, remote_dict, "_afar_return_value_")
-                repr_future = client.submit(
-                    repr_afar,
-                    return_future,
-                    self._magic_func._repr_methods,
-                )
-                weak_futures.add(repr_future)
-                if return_expr:
-                    weak_futures.add(return_future)
-                else:
-                    return_future.release()  # Let go ASAP
-                    return_future = None
-            else:
-                repr_future = None
-
-            if capture_print:
-                obj = repr_future if display_expr else remote_dict
-                obj.add_done_callback(
-                    partial(self._finalize_print, self._outputs[unique_key], display_expr)
-                )
 
             if self._gather_data:
                 futures_to_name = {
@@ -378,38 +284,27 @@ class Run:
     def _handle_print(cls, event):
         # XXX: can we assume all messages from a single task arrive in FIFO order?
         _, msg = event
-        key, stream_name, string = msg
+        key, action, payload = msg
         out, is_updated = cls._outputs[key]
         if out is not None:
             if not is_updated:
                 # Clear the "Running afar..." message
                 out.outputs = type(out.outputs)()
                 cls._outputs[key][1] = True  # is updated
-            if stream_name == "stdout":
-                out.append_stdout(string)
-            elif stream_name == "stderr":
-                out.append_stderr(string)
-        elif stream_name == "stdout":
-            print(string, end="")
-        elif stream_name == "stderr":
-            print(string, end="", file=sys.stderr)
-        if stream_name == "finish":
+            # ipywidgets.Output is pretty slow if there are lots of messages
+            if action == "stdout":
+                out.append_stdout(payload)
+            elif action == "stderr":
+                out.append_stderr(payload)
+        elif action == "stdout":
+            print(payload, end="")
+        elif action == "stderr":
+            print(payload, end="", file=sys.stderr)
+        if action == "display_expr":
+            display_repr(payload, out=out)
             del cls._outputs[key]
-
-    def _finalize_print(self, info, display_expr, future):
-        # Can we move this to `_handle_print`?
-        # _handle_print for this key may get called *after* _finalize_print
-        out, is_updated = info
-        if out is not None and not is_updated:
-            # Clear the "Running afar..." message to indicate it's finished
-            # out.clear_output()  # Not thread-safe!
-            # See: https://github.com/jupyter-widgets/ipywidgets/issues/3260
-            out.outputs = type(out.outputs)()  # current workaround
-            info[1] = True  # is updated
-        if display_expr:
-            repr_val = future.result()
-            if repr_val is not None:
-                display_repr(repr_val, out=out)
+        elif action == "finish":
+            del cls._outputs[key]
 
 
 class Get(Run):
@@ -419,8 +314,14 @@ class Get(Run):
 
 
 def run_afar(magic_func, names, futures, capture_print, unique_key):
+    if capture_print:
+        try:
+            worker = get_worker()
+            send_finish = True
+        except ValueError:
+            worker = None
     try:
-        if capture_print:
+        if capture_print and worker is not None:
             rec = PrintRecorder(unique_key)
             if "print" in magic_func._scoped.builtin_names and "print" not in futures:
                 sfunc = magic_func._scoped.bind(futures, print=rec)
@@ -433,16 +334,15 @@ def run_afar(magic_func, names, futures, capture_print, unique_key):
             results = sfunc()
 
         rv = {key: results[key] for key in names}
-        if magic_func._display_expr:
-            rv["_afar_return_value_"] = results.return_value
+
+        if magic_func._display_expr and worker is not None:
+            pretty_repr = repr_afar(results.return_value, magic_func._repr_methods)
+            if pretty_repr is not None:
+                worker.log_event("afar-print", (unique_key, "display_expr", pretty_repr))
+                send_finish = False
     finally:
-        if capture_print:
-            try:
-                worker = get_worker()
-            except ValueError:
-                pass
-            else:
-                worker.log_event("afar-print", (unique_key, "finish", None))
+        if capture_print and worker is not None and send_finish:
+            worker.log_event("afar-print", (unique_key, "finish", None))
     return rv
 
 
