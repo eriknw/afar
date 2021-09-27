@@ -14,7 +14,9 @@ class AttrRecorder:
         self._attrs = []
 
     def __getattr__(self, attr):
-        if "canary" not in attr:
+        if "canary" not in attr and attr != "_ipython_display_":
+            # _ipython_display_ requires sending the object back to the client.
+            # Let's not bother with this hassle for now.
             self._attrs.append(attr)
         raise AttributeError(attr)
 
@@ -44,6 +46,7 @@ def repr_afar(val, repr_methods):
             continue
         if method_name == "_ipython_display_":
             # Custom display!  Send the object to the client
+            # We don't allow _ipython_display_ at the moment
             return val, method_name, False
         try:
             rv = method()
@@ -100,6 +103,7 @@ def display_repr(results, out=None):
     from IPython.display import display
 
     if method_name == "_ipython_display_":
+        # We don't allow _ipython_display_ at the moment
         if out is None:
             display(val)
         else:

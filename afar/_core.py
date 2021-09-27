@@ -1,7 +1,6 @@
 """Define the user-facing `run` object; this is where it all comes together."""
 import dis
 import sys
-import traceback
 from inspect import currentframe
 from uuid import uuid4
 from weakref import WeakKeyDictionary, WeakSet
@@ -345,22 +344,11 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
         if magic_func._display_expr and worker is not None:
             # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
             # better to add the return value to rv and call repr_afar as a separate task.
-            # Also, pretty_repr must be msgpack serializable if done via events.
-            # Hence, custom _ipython_display_ probably won't work, and we resort to
-            # trying to use a basic repr (if that fails, we show the first exception).
+            # Also, pretty_repr must be msgpack serializable if done via events.  Hence,
+            # custom _ipython_display_ doesn't work, and we resort to using a basic repr.
             pretty_repr = repr_afar(results.return_value, magic_func._repr_methods)
             if pretty_repr is not None:
-                try:
-                    worker.log_event(channel, (unique_key, "display_expr", pretty_repr))
-                except Exception:
-                    exc_info = sys.exc_info()
-                    tb = traceback.format_exception(*exc_info)
-                    try:
-                        basic_repr = (repr(results.return_value), "__repr__", False)
-                        worker.log_event(channel, (unique_key, "display_expr", basic_repr))
-                    except Exception:
-                        exc_repr = (tb, pretty_repr[1], True)
-                        worker.log_event(channel, (unique_key, "display_expr", exc_repr))
+                worker.log_event(channel, (unique_key, "display_expr", pretty_repr))
                 send_finish = False
     finally:
         if capture_print and worker is not None and send_finish:
