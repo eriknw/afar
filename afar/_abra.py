@@ -1,3 +1,8 @@
+"""Perform a magic trick: given lines of code, create a function to run remotely.
+
+This callable object is able to provide the values of the requested argument
+names and return the final expression so it can be displayed.
+"""
 import dis
 from types import FunctionType
 
@@ -5,7 +10,7 @@ from dask.distributed import Future
 from innerscope import scoped_function
 
 from ._reprs import get_repr_methods
-from ._utils import code_replace, is_kernel
+from ._utils import code_replace, is_ipython
 
 
 def endswith_expr(func):
@@ -85,7 +90,7 @@ def cadabra(context_body, where, names, data, global_ns, local_ns):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(context_body)
-    func, display_expr = create_func(source, global_ns, is_kernel())
+    func, display_expr = create_func(source, global_ns, is_ipython())
 
     # If no variable names were given, only get the last assignment
     if not names:
