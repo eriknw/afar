@@ -39,7 +39,7 @@ jobs:
         run: |
           pip install black flake8
           flake8 .
-          black afar *.py --check --diff
+          black . --check --diff
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.github_token }}

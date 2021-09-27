@@ -1,3 +1,8 @@
+"""Perform a magic trick: given lines of code, create a function to run remotely.
+
+This callable object is able to provide the values of the requested argument
+names and return the final expression so it can be displayed.
+"""
 import dis
 from types import FunctionType
 

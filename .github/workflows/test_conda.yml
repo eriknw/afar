@@ -31,8 +31,7 @@ jobs:
           activate-environment: afar
       - name: Install dependencies
         run: |
-          conda install -y -c conda-forge distributed pytest
-          pip install innerscope
+          conda install -y -c conda-forge distributed pytest innerscope
           pip install -e .
       - name: PyTest
         run: |

@@ -1,3 +1,4 @@
+"""Utilities to get the lines of the context body."""
 import dis
 from inspect import findsource
 

@@ -1,3 +1,4 @@
+"""Classes used to capture print statements within a Dask task."""
 import builtins
 import sys
 from io import StringIO
@@ -59,3 +60,6 @@ class PrintRecorder:
                 pass
             else:
                 worker.log_event(self.channel, (self.key, stream_name, file.getvalue()))
+            # Print locally too
+            stream = sys.stdout if stream_name == "stdout" else sys.stderr
+            LocalPrint.printer(file.getvalue(), end="", file=stream)
