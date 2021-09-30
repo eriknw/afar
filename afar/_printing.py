@@ -12,6 +12,12 @@ from dask.distributed import get_worker
 # So, use `threading.local` and a lock for some ugly capturing.
 class LocalPrint(local):
     printer = None
+    # Update fields from `functools.WRAPPER_ASSIGNMENTS` as if we wrapped print
+    # See: https://github.com/eriknw/afar/issues/29
+    __module__ = builtins.print.__module__
+    __name__ = builtins.print.__name__
+    __qualname__ = builtins.print.__qualname__
+    __doc__ = builtins.print.__doc__
 
     def __call__(self, *args, **kwargs):
         return self.printer(*args, **kwargs)
