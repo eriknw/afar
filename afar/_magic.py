@@ -6,6 +6,9 @@ from IPython import get_ipython
 from IPython.core.error import UsageError
 from IPython.core.magic import Magics, line_cell_magic, magics_class, needs_local_scope
 
+from ._core import Run, get, run
+from ._where import Where, remotely
+
 DOC_TEMPLATE = """Execute the cell on a dask.distributed cluster.
 
 Usage, in line mode:
@@ -16,12 +19,7 @@ Usage, in cell mode
     code...
 
 Options:
-
-{get_desc}
-{run_desc}
-{data_desc}
-{where_desc}
-{client_desc}
+{get_desc} {run_desc} {data_desc} {where_desc} {client_desc}
   <variable_names>
     Variable names (space- or comma-separated) from the cell to copy to the local
     namespace as dask Future objects.
@@ -71,9 +69,6 @@ DOC_DEFAULTS = {
 
 class AfarMagicBase(Magics):
     def _run(self, line, cell=None, *, local_ns, runner=None, data=None, where=None, client=None):
-        from ._core import Run, get, run
-        from ._where import Where, remotely
-
         options = ""
         args = []
         if runner is None:
