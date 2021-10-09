@@ -62,7 +62,7 @@ with afar.get, remotely:
 assert five == 5
 ```
 ## Interactivity in Jupyter
-There are several enhancements when using `afar` in Jupyter Notebook or Qt console, JupyterLab, or any IPython-based frontend that supports rich display.
+There are several enhancements when using `afar` in Jupyter Notebook or Qt console, JupyterLab, or any IPython-based frontend.
 
 The rich repr of the final expression will be displayed if it's not an assignment:
 ```python
@@ -71,7 +71,7 @@ with afar.run, remotely:
 # displays 10!
 ```
 
-Printing is captured and displayed locally:
+Printing is captured and displayed locally and asynchronously:
 ```python
 with afar.run, remotely:
     print(three)
@@ -96,6 +96,20 @@ and
 ```python
 z = %afar x + y
 ```
+
+### Custom Magic
+You can create your own IPython magic like `%afar` that has arguments baked in:
+```python
+afar.new_magic("on_gpus", where=remotely(resources={"GPU": 1}))
+```
+then:
+```python
+%%on_gpus
+import dask_cudf
+df = dask_cudf.read_parquet("s3://...")
+result = df.sum().compute()
+```
+
 ## Is this a good idea?
 
 I don't know, but it sure is a joy to use 😃 !
