@@ -36,6 +36,8 @@ jobs:
       - name: PyTest
         run: |
           which python  # sanity check
+          python -c 'from distributed.utils import is_kernel'
+          python -c 'from dask import distributed'
           pytest
       - name: Notebook test
         run: |

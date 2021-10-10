@@ -33,6 +33,8 @@ jobs:
       - name: PyTest
         run: |
           pip install pytest coverage
+          python -c 'from distributed.utils import is_kernel'
+          python -c 'from dask import distributed'
           coverage run --branch -m pytest
       - name: Style checks
         if: (! contains(matrix.python-version, 'pypy'))
