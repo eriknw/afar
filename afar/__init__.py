@@ -13,12 +13,16 @@ or to use an IPython magic:
 Read the documentation at https://github.com/eriknw/afar
 """
 
+from . import _utils
 from ._core import get, run  # noqa
 from ._version import get_versions
 from ._where import later, locally, remotely  # noqa
 
 __version__ = get_versions()["version"]
 del get_versions
+
+if _utils.is_ipython():
+    from ._magic import new_magic  # noqa
 
 
 def load_ipython_extension(ip):
