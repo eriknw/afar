@@ -18,7 +18,7 @@ setup(
     url="https://github.com/eriknw/afar",
     packages=find_packages(),
     license="BSD",
-    python_requires=">=3.8",
+    python_requires=">=3.7",
     setup_requires=[],
     install_requires=install_requires,
     tests_require=["pytest"],

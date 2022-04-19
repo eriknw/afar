@@ -1,10 +1,9 @@
 # **Afar**
-[![Python Version](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9-blue)](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9-blue)
+[![Python Version](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)
 [![Version](https://img.shields.io/pypi/v/afar.svg)](https://pypi.org/project/afar/)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/eriknw/afar/blob/main/LICENSE)
 [![Build Status](https://github.com/eriknw/afar/workflows/Test/badge.svg)](https://github.com/eriknw/afar/actions)
 [![Coverage Status](https://coveralls.io/repos/eriknw/afar/badge.svg?branch=main)](https://coveralls.io/r/eriknw/afar)
-[![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 > **_One man's magic is another man's engineering_**<br>
 > _Robert A. Heinlein_
