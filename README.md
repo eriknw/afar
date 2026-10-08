@@ -72,6 +72,7 @@ with afar.run, remotely:
     three + seven
 # displays 10!
 ```
+As in IPython, a final expression that ends with `;`, or whose value is `None`, is not displayed.
 
 Printing is captured and displayed locally and asynchronously:
 ```python
@@ -81,7 +82,7 @@ with afar.run, remotely:
 # 3
 # 7
 ```
-These are done asynchronously using `ipywidgets`.
+These are done asynchronously using `ipywidgets`.  Errors raised remotely are shown the same way, as tracebacks.
 
 ### Magic!
 First load `afar` magic extension:

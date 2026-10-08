@@ -48,7 +48,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-          # Python 3.15 is a release candidate until 2026-10-09
+          # Use a release candidate of a Python version that has no final release yet
           allow-prereleases: true
       - name: Install dependencies
         run: |
@@ -115,8 +115,8 @@ jobs:
           activate-environment: afar
       - name: Install dependencies
         run: |
+          # Keep these floors in sync with `dependencies` in pyproject.toml
           if [ "${{ matrix.versions }}" = "minimum" ]; then
-            # Keep these in sync with `dependencies` in pyproject.toml
             versions="distributed=2021.12.0 innerscope=0.8.0"
           else
             versions="distributed>=2021.12.0 innerscope>=0.8.0"
