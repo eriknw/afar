@@ -248,9 +248,10 @@ class Run:
         else:
             raise ValueError(f"Don't know where {where!r} is")
 
-        # Try to update the variables in the frame.
-        # This currently only works if f_locals is f_globals, or if tracing (don't ask).
-        local_ns.update((name, data[name]) for name in names)
+        # Try to update the variables in the frame.  This works if f_locals is f_globals
+        # (module scope and IPython), or in functions since Python 3.13 (PEP 667), where
+        # f_locals is a write-through proxy whose `update` requires a dict.
+        local_ns.update({name: data[name] for name in names})
         return return_future
 
     def cancel(self, *, client=None, force=False):
