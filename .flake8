@@ -11,6 +11,6 @@ extend-ignore =
 # No trailing comments below: flake8 would read them as part of the pattern.
 per-file-ignores =
     __init__.py:F401
-    afar/tests/*.py:B018,E701,F811,F821,F841,SIM105,SIM117
+    afar/tests/*.py:B018,C416,E701,F811,F821,F841,SIM105,SIM117
     afar/tests/test_core.py:B018,E122,F821,F841,SIM117
     afar/tests/test_later.py:B018,E122,E125,E251,E502,E701,F821,F841,SIM117

@@ -37,6 +37,19 @@ def test_simple(client):
     assert results == {"five": 5}
 
 
+def test_innerscope_method(client, pytestconfig):
+    import innerscope
+
+    with afar.get as results, afar.remotely:
+        import innerscope as remote_innerscope
+
+        method = remote_innerscope.cfg.default_method
+    assert results["method"] == innerscope.cfg.default_method
+    expected = pytestconfig.getoption("--innerscope-method")
+    if expected is not None:
+        assert results["method"] == expected
+
+
 def test_runs_in_worker_process(client):
     import os
 

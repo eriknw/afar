@@ -4,11 +4,39 @@ import time
 import pytest
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--innerscope-method",
+        action="store",
+        default=None,
+        choices=["bytecode", "trace"],
+        help=(
+            "Select innerscope's default method, here and on the workers of the test cluster "
+            "(default: innerscope's default for this Python)"
+        ),
+    )
+
+
+def set_innerscope_method(method):
+    import innerscope
+
+    innerscope.cfg.default_method = method
+
+
+def pytest_configure(config):
+    method = config.getoption("--innerscope-method")
+    if method is not None:
+        set_innerscope_method(method)
+
+
 @pytest.fixture(scope="session")
-def client():
+def client(pytestconfig):
     from dask.distributed import Client
 
     with Client(n_workers=2, threads_per_worker=1, dashboard_address=":0") as client:
+        method = pytestconfig.getoption("--innerscope-method")
+        if method is not None:
+            client.run(set_innerscope_method, method)
         yield client
 
 
