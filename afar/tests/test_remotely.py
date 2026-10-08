@@ -136,3 +136,33 @@ def test_remote_in_function(client):
     else:
         with pytest.raises(UnboundLocalError):
             f()
+
+
+def test_remote_does_not_rebind_enclosing_variable(client):
+    z = 10
+
+    def inner():
+        # `z` is a free variable here: inner only reads it
+        with afar.run("z", "w") as results, afar.remotely:
+            w = z + 1
+        return results
+
+    results = inner()
+    assert results["w"].result() == 11
+    assert z == 10
+
+
+def test_remote_nonlocal(client):
+    def outer():
+        z = 10
+
+        def inner():
+            nonlocal z
+            with afar.get, afar.remotely:
+                z = 5
+
+        inner()
+        return z
+
+    # Since Python 3.13, the body's `z` reaches `outer`, as `nonlocal` says it should
+    assert outer() == (5 if sys.version_info >= (3, 13) else 10)

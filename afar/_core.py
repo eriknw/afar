@@ -118,6 +118,7 @@ class Run:
             submit_kwargs=where.submit_kwargs,
             global_ns=frame.f_globals,
             local_ns=frame.f_locals,
+            free_names=frame.f_code.co_freevars,
         )
         return True
 
@@ -133,6 +134,7 @@ class Run:
         client=None,
         submit_kwargs=None,
         return_expr=False,
+        free_names=(),
     ):
         self._where = where
         self.context_body = context_body
@@ -252,8 +254,13 @@ class Run:
 
         # Try to update the variables in the frame.  This works if f_locals is f_globals
         # (module scope and IPython), or in functions since Python 3.13 (PEP 667), where
-        # f_locals is a write-through proxy whose `update` requires a dict.
-        local_ns.update({name: data[name] for name in names})
+        # f_locals is a write-through proxy whose `update` requires a dict.  The proxy also
+        # writes to variables of enclosing functions, which a function may rebind only with
+        # `nonlocal`, and then the body binds them too.  Leave the others alone.
+        inner_names = self._magic_func._scoped.inner_names
+        local_ns.update(
+            {name: data[name] for name in names if name not in free_names or name in inner_names}
+        )
         return return_future
 
     def cancel(self, *, client=None, force=False):
