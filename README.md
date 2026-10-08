@@ -1,8 +1,9 @@
 # **Afar**
-[![Python Version](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)
-[![Version](https://img.shields.io/pypi/v/afar.svg)](https://pypi.org/project/afar/)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/afar.svg)](https://anaconda.org/conda-forge/afar)
+[![pypi](https://img.shields.io/pypi/v/afar.svg)](https://pypi.org/project/afar/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/afar)](https://pypi.org/project/afar/)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/eriknw/afar/blob/main/LICENSE)
-[![Build Status](https://github.com/eriknw/afar/workflows/Test/badge.svg)](https://github.com/eriknw/afar/actions)
+[![Tests](https://github.com/eriknw/afar/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/eriknw/afar/actions)
 [![Coverage Status](https://coveralls.io/repos/eriknw/afar/badge.svg?branch=main)](https://coveralls.io/r/eriknw/afar)
 
 > **_One man's magic is another man's engineering_**<br>
@@ -32,6 +33,8 @@ with afar.run, remotely:
     result = df.sum().compute()
 ```
 Outside the context, `result` is a [Dask Future](https://docs.dask.org/en/latest/futures.html) whose data resides on a worker.  `result.result()` is necessary to copy the data locally.
+
+Variables are set outside the context at module scope and in IPython or Jupyter.  Inside a function, they are set on Python 3.13 and later; on earlier versions, use the dictionary `afar.run` returns (`with afar.run as data, remotely:`), described below.
 
 By default, only the last assignment is saved.  One can specify which variables to save:
 ```python
@@ -95,6 +98,7 @@ and
 ```python
 z = %afar x + y
 ```
+`z` is a Future of the result (or the result itself with `%afar -g`, which uses `afar.get`).
 
 ### Custom Magic
 You can create your own IPython magic like `%afar` that has arguments baked in:
@@ -157,7 +161,7 @@ with afar.run, remotely:
 Another option is to pass `data` to `run`:
 ```python
 run = afar.run(data={"A": np.arange(10**7)})
-with afar.run, remotely:
+with run, remotely:
     B = A + 1
 # run.data["A"] and B are now both Futures; their data is on the cluster
 ```
