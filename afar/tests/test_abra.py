@@ -93,6 +93,6 @@ def test_default_names_skip_exception_name():
     with afar.run as results, afar.locally:
         try:
             x = 1
-        except Exception as e:  # noqa: F841
+        except Exception as e:
             pass
     assert results == {"x": 1}

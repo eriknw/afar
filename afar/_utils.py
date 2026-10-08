@@ -19,7 +19,7 @@ def is_ipython():
 def supports_async_output():
     if is_kernel() and not is_terminal():
         try:
-            import ipywidgets  # noqa
+            import ipywidgets  # noqa: F401
         except ImportError:
             return False
         return True

@@ -157,6 +157,7 @@ ignore = [
     "N803",  # Argument name ... should be lowercase (Maybe okay--except in tests)
     "N806",  # Variable ... in function should be lowercase
     "N807",  # Function name should not start and end with `__`
+    "N815",  # Variable ... in class scope should not be mixedCase (Note: `ast.NodeVisitor` method names)
     "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
     "PERF203",  # `try`-`except` within a loop incurs performance overhead (Note: not since 3.11)
     "PLC0415",  # `import` should be at top-level (Note: deferred imports keep IPython optional)
@@ -164,6 +165,7 @@ ignore = [
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call
     "PLR0915",  # Too many statements
+    "PLR0917",  # Too many positional arguments
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
     "PLW0603",  # Using the global statement to update ... is discouraged
     "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
@@ -205,7 +207,8 @@ ignore = [
 "afar/tests/*py" = [
     "S101", "S301", "S603", "T201", "D103", "D100",  # Allow assert, print, pickle, subprocess, and no docstring
     # afar tests are full of names that are only used remotely, or are undefined on purpose
-    "B018", "F821", "F841", "PLW0127", "PLW0128", "SIM117",
+    "B018", "C416", "E701", "F821", "F841", "PLW0127", "PLW0128", "PT012", "RUF043", "SIM117",
+    "PT013",  # Allow `from pytest import raises`
     "INP001",  # The tests directory is a package
 ]
 

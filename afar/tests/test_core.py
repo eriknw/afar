@@ -1,6 +1,5 @@
 import pickle
 
-import pytest
 from pytest import raises
 
 import afar
@@ -60,7 +59,7 @@ def test_temporary_assignment():
     :
         x = z
         y = x + 1
-    assert results == {'y': 2}
+    assert results == {"y": 2}
     # fmt: on
 
     with afar.run("a") as results, locally:

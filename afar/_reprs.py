@@ -1,4 +1,5 @@
 """Utilities to calculate the (pretty) repr of objects remotely and display locally."""
+
 import sys
 import traceback
 
@@ -93,7 +94,7 @@ def display_repr(results, out=None):
     val, method_name, is_exception = results
     if is_exception:
         if out is None:
-            print(val, file=sys.stderr)
+            print(val, file=sys.stderr)  # noqa: T201
         else:
             out.append_stderr(val)
         return

@@ -1,4 +1,5 @@
 """Define the IPython magic for using afar"""
+
 from textwrap import indent
 
 from dask.distributed import Client

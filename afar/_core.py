@@ -1,4 +1,5 @@
 """Define the user-facing `run` object; this is where it all comes together."""
+
 import sys
 from inspect import currentframe
 from uuid import uuid4
@@ -168,7 +169,7 @@ class Run:
                 to_scatter = list(to_scatter)
                 # I'm afraid to hash, because users may accidentally mutate things.
                 scattered = client.scatter([data[key] for key in to_scatter], hash=False)
-                scattered = dict(zip(to_scatter, scattered))
+                scattered = dict(zip(to_scatter, scattered, strict=True))
                 futures.update(scattered)
                 data.update(scattered)
                 for key in to_scatter:
@@ -259,8 +260,8 @@ class Run:
             items = [(client, self._client_to_futures[client])]
         else:
             items = self._client_to_futures.items()
-        for client, weak_futures in items:
-            client.cancel(
+        for cur_client, weak_futures in items:
+            cur_client.cancel(
                 [future for future in weak_futures if future.status == "pending"], force=force
             )
             weak_futures.clear()
@@ -302,9 +303,9 @@ class Run:
                 elif action == "stderr":
                     out.append_stderr(payload)
         elif action == "stdout":
-            print(payload, end="")
+            print(payload, end="")  # noqa: T201
         elif action == "stderr":
-            print(payload, end="", file=sys.stderr)
+            print(payload, end="", file=sys.stderr)  # noqa: T201
         if action == "display_expr":
             display_repr(payload, out=out)
             del cls._outputs[key]

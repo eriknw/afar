@@ -16,7 +16,7 @@ _WITH_START = re.compile(r"\s*with\b")
 
 def get_lines(frame):
     try:
-        lines, offset = findsource(frame)
+        lines, _ = findsource(frame)
     except OSError:
         # Try to fine the source if we are in %%time or %%timeit magic
         if frame.f_code.co_filename in {"<timed exec>", "<magic-timeit>"} and is_ipython():
@@ -123,5 +123,5 @@ def analyze_with(lines, with_start):
         raise RuntimeError("Failed to analyze the context!") from exc
     node = tree.body[0]
     if not isinstance(node, ast.With):
-        raise RuntimeError("Failed to analyze the context!")
+        raise RuntimeError("Failed to analyze the context!")  # noqa: TRY004
     return len(node.items), body_start, body_end
