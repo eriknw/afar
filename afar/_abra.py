@@ -17,7 +17,7 @@ from ._utils import is_ipython
 
 class _AssignedNames(ast.NodeVisitor):
     """Collect the names a block of statements binds, in source order (and in evaluation
-    order within a statement), forgetting names that are deleted.
+    order within a statement).
 
     Nested scopes (functions, lambdas, classes, and comprehensions) bind names of their own,
     so only their names (for functions and classes) and the parts evaluated in the enclosing
@@ -30,8 +30,6 @@ class _AssignedNames(ast.NodeVisitor):
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Store):
             self.names.append(node.id)
-        elif isinstance(node.ctx, ast.Del):
-            self.names = [name for name in self.names if name != node.id]
 
     def visit_Assign(self, node):
         self.visit(node.value)
@@ -114,10 +112,20 @@ class _AssignedNames(ast.NodeVisitor):
 
 
 def last_assigned_name(stmts):
-    """The name bound last by the statements, or None"""
+    """The name bound last by the statements and not deleted after, or None"""
     visitor = _AssignedNames()
     for stmt in stmts:
-        visitor.visit(stmt)
+        if isinstance(stmt, ast.Delete):
+            # Only a `del` among the statements themselves surely runs, not one in a branch
+            deleted = {
+                node.id
+                for target in stmt.targets
+                for node in ast.walk(target)
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del)
+            }
+            visitor.names = [name for name in visitor.names if name not in deleted]
+        else:
+            visitor.visit(stmt)
     return visitor.names[-1] if visitor.names else None
 
 

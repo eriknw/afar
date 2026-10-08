@@ -41,6 +41,10 @@ def last_name(source):
         ("x = 1\ndel x\nx = 2", "x"),
         ("x = y = 1\ndel x, d[y]", "y"),
         ("for item in range(3):\n    total = item\ndel item", "total"),
+        ("a = b = 1\ndel (a, [b])", None),
+        # A `del` that may not run does not hide the name
+        ("x = 1\nif flag:\n    del x", "x"),
+        ("for i in range(3):\n    tmp = i\n    del tmp", "tmp"),
         ("pass", None),
         ("print(1)", None),
         # Python 3.12+ inlines comprehensions (PEP 709); the iteration variable is not a result
