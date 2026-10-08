@@ -240,7 +240,7 @@ class Run:
             for name in names:
                 data[name] = results[name]
             if display_expr:
-                if results.return_value is not None:
+                if results.return_value is not None and not self._magic_func._quiet:
                     # As remotely (see `repr_afar`) and as IPython does, don't display None
                     from IPython.display import display
 
@@ -367,7 +367,7 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
         if return_expr:
             rv[RETURN_VALUE_KEY] = results.return_value
 
-        if magic_func._display_expr and worker is not None:
+        if magic_func._display_expr and not magic_func._quiet and worker is not None:
             # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
             # better to add the return value to rv and call repr_afar as a separate task.
             # Also, pretty_repr must be msgpack serializable if done via events.  Hence,

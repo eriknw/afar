@@ -5,6 +5,8 @@ names and return the final expression so it can be displayed.
 """
 
 import ast
+import io
+import tokenize
 
 from dask.distributed import Future
 from innerscope import scoped_function
@@ -138,12 +140,30 @@ def create_func(source, globals_dict, is_in_ipython):
     return func, display_expr, funcdef
 
 
+def ends_with_semicolon(source):
+    """Whether the last token is `;`, which tells IPython not to display the final expression"""
+    skip = {
+        tokenize.ENDMARKER,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.COMMENT,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+    }
+    for tok in reversed(list(tokenize.generate_tokens(io.StringIO(source).readline))):
+        if tok.type not in skip:
+            return tok.type == tokenize.OP and tok.string == ";"
+    return False
+
+
 class MagicFunction:
-    def __init__(self, source, scoped, display_expr):
+    def __init__(self, source, scoped, display_expr, quiet=False):
         self._source = source
         self._scoped = scoped
+        # The function returns its final expression; display it unless `quiet`
         self._display_expr = display_expr
-        if display_expr:
+        self._quiet = quiet
+        if display_expr and not quiet:
             self._repr_methods = get_repr_methods()
         else:
             self._repr_methods = None
@@ -197,5 +217,6 @@ def cadabra(context_body, where, names, data, global_ns, local_ns):
             del scoped.outer_scope[key]
     else:
         futures = None
-    magic_func = MagicFunction(source, scoped, display_expr)
+    quiet = display_expr and ends_with_semicolon(source)
+    magic_func = MagicFunction(source, scoped, display_expr, quiet)
     return magic_func, names, futures

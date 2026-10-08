@@ -6,7 +6,7 @@ import textwrap
 import pytest
 
 import afar
-from afar._abra import create_func, last_assigned_name
+from afar._abra import create_func, ends_with_semicolon, last_assigned_name
 
 
 def last_name(source):
@@ -100,3 +100,19 @@ def test_default_names_skip_exception_name():
         except Exception as e:
             pass
     assert results == {"x": 1}
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("x + 1;", True),
+        ("x + 1;  # comment", True),
+        ("x + 1; y", False),
+        ("x + 1", False),
+        ("s = ';'", False),
+        ("x + 1  # ;", False),
+        ("if x:\n    y;\n", True),
+    ],
+)
+def test_ends_with_semicolon(body, expected):
+    assert ends_with_semicolon(make_source(body)) is expected

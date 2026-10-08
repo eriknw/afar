@@ -36,6 +36,16 @@ def test_no_display_locally(ip_afar, capsys, body):
     assert capsys.readouterr().out in {"", "hi\n"}
 
 
+def test_semicolon_suppresses_display_locally(ip_afar, capsys):
+    run_cell(ip_afar, "with afar.run, afar.locally:\n    x = 40\n    x + 2;  # quiet\n")
+    assert capsys.readouterr().out == ""
+    # The value is still returned
+    ip_afar.user_ns["y"] = 2
+    run_cell(ip_afar, "w = %afar -w here y + 1;\n")
+    assert ip_afar.user_ns["w"] == 3
+    assert capsys.readouterr().out == ""
+
+
 def test_cell_magic_locally(ip_afar):
     run_cell(ip_afar, "%%afar -w here x, y\nx = 1\ny = x + 1\nz = 3\n")
     assert ip_afar.user_ns["x"] == 1
@@ -108,3 +118,11 @@ def test_remote_display_and_print(ip_afar, client, capsys, wait_for_outputs):
     run_cell(ip_afar, "with afar.run, afar.remotely:\n    print('hello')\n    40 + 2\n")
     wait_for_outputs()
     assert capsys.readouterr().out == "hello\n42\n"
+
+
+def test_remote_semicolon(ip_afar, client, capsys, wait_for_outputs):
+    run_cell(ip_afar, "with afar.run, afar.remotely:\n    print('hello')\n    40 + 2;\n")
+    run_cell(ip_afar, "v = %afar -g 40 + 3;\n")
+    assert ip_afar.user_ns["v"] == 43
+    wait_for_outputs()
+    assert capsys.readouterr().out == "hello\n"
