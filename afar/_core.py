@@ -1,5 +1,4 @@
 """Define the user-facing `run` object; this is where it all comes together."""
-import dis
 import sys
 from inspect import currentframe
 from uuid import uuid4
@@ -9,7 +8,7 @@ from dask import distributed
 from dask.distributed import get_worker
 
 from ._abra import cadabra
-from ._inspect import get_body, get_body_start, get_lines
+from ._inspect import analyze_with, find_with_start, get_lines
 from ._printing import PrintRecorder
 from ._reprs import display_repr, repr_afar
 from ._utils import supports_async_output
@@ -37,6 +36,7 @@ class Run:
         self._where = None
         self._magic_func = None
         self._body_start = None
+        self._body_end = None
         self._lines = None
 
     def __call__(self, *names, client=None, data=None):
@@ -51,20 +51,14 @@ class Run:
 
     def __enter__(self):
         self._frame = currentframe().f_back
-        with_lineno = self._frame.f_lineno - 1
         if self._is_singleton:
             if self.data:
                 raise RuntimeError("uh oh!")
             self.data = {}
 
         lines = get_lines(self._frame)
-
-        while not lines[with_lineno].lstrip().startswith("with"):
-            with_lineno -= 1
-            if with_lineno < 0:
-                raise RuntimeError("Failed to analyze the context!")
-
-        num_with, body_start = get_body_start(lines, with_lineno)
+        with_start = find_with_start(lines, self._frame.f_lineno)
+        num_with, body_start, body_end = analyze_with(lines, with_start)
         if num_with < 2:
             # Best effort detection.  This fails if there is a context *before* afar.run
             within = type(self).__name__.lower()
@@ -75,6 +69,7 @@ class Run:
                 f"Please specify a location such as adding `, remotely`."
             )
         self._body_start = body_start
+        self._body_end = body_end
         self._lines = lines
         return self.data
 
@@ -108,18 +103,7 @@ class Run:
 
     def _exit(self, where):
         frame = self._frame
-        # What line does the context end?
-        maxline = self._body_start
-        for offset, line in dis.findlinestarts(frame.f_code):
-            if line > maxline:
-                maxline = line
-            if offset > frame.f_lasti:
-                endline = max(maxline, maxline - 1)
-                break
-        else:
-            endline = maxline + 5  # give us some wiggle room
-
-        context_body = get_body(self._lines[self._body_start : endline])
+        context_body = self._lines[self._body_start : self._body_end]
         self._run(
             where.where,
             context_body,
@@ -238,7 +222,7 @@ class Run:
             for name in names:
                 data[name] = results[name]
             if display_expr:
-                from IPython.dislpay import display
+                from IPython.display import display
 
                 display(results.return_value)
                 if return_expr:

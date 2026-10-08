@@ -22,7 +22,7 @@ def test_later_bodies():
     with run, later:
         pass
 
-    assert run.context_body == ["        pass\n", "\n"]
+    assert run.context_body == ["        pass\n"]
 
     with raises(Exception, match="missing"):
         with run:
@@ -32,7 +32,7 @@ def test_later_bodies():
         b = a + 1
         c = a + b
 
-    assert run.context_body == ["        b = a + 1\n", "        c = a + b\n", "\n"]
+    assert run.context_body == ["        b = a + 1\n", "        c = a + b\n"]
 
     with raises(Exception, match="missing"):
         with run:
@@ -59,7 +59,7 @@ def test_later_bodies():
 
     # fmt: on
 
-    assert run.context_body == ["\n", "        pass\n", "\n", "    # fmt: on\n", "\n"]
+    assert run.context_body == ["\n", "        pass\n"]
 
     # fmt: off
     with \
@@ -89,9 +89,6 @@ def test_later_bodies():
         "            =\n",
         "            2\n",
         "        )\n",
-        "\n",
-        "    # fmt: on\n",
-        "\n",
     ]
 
     # fmt: off

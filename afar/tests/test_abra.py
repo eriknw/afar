@@ -1,0 +1,98 @@
+"""Turn a context body into a function, and choose what to bring back."""
+
+import ast
+import textwrap
+
+import pytest
+
+import afar
+from afar._abra import create_func, last_assigned_name
+
+
+def last_name(source):
+    return last_assigned_name(ast.parse(textwrap.dedent(source)).body)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("x = 1", "x"),
+        ("x = y = 1", "y"),
+        ("a, (b, *c) = 1, (2, 3)", "c"),
+        ("x = 1\nx += 1", "x"),
+        ("x: int = 1", "x"),
+        ("y = 1\nx: int", "y"),
+        ("x = 1\nobj.attr = 2\nd['key'] = 3", "x"),
+        ("x = (y := 1)", "x"),
+        ("f(y := 1)", "y"),
+        ("import os.path", "os"),
+        ("import numpy as np", "np"),
+        ("from os import path, sep as separator", "separator"),
+        ("x = 1\nimport os", "os"),
+        ("def f(z=1):\n    w = 2", "f"),
+        ("x = 1\ndef f(z=(y := 2)):\n    w = 2", "f"),
+        ("class C:\n    w = 2", "C"),
+        ("for i in range(3):\n    total = i", "total"),
+        ("for i in range(3):\n    pass", "i"),
+        ("with open(f) as fh:\n    pass", "fh"),
+        ("if c:\n    x = 1\nelse:\n    y = 2", "y"),
+        ("x = 1\ndel x", "x"),
+        ("pass", None),
+        ("print(1)", None),
+        # Python 3.12+ inlines comprehensions (PEP 709); the iteration variable is not a result
+        ("y = [i for i in range(3)]", "y"),
+        ("y = {k: v for k, v in d.items()}", "y"),
+        ("y = sum(i for i in range(3))", "y"),
+        ("[i for i in range(3)]", None),
+        ("f = lambda q=1: (r := q)", "f"),
+        # The name of an exception is deleted at the end of the handler
+        ("try:\n    x = 1\nexcept Exception as e:\n    pass", "x"),
+        ("try:\n    x = 1\nexcept Exception as e:\n    y = e", "y"),
+        ("match p:\n    case [a, *rest]:\n        pass", "rest"),
+        ("match p:\n    case {'k': a, **rest}:\n        pass", "rest"),
+        ("match p:\n    case Point(x=a) as pt:\n        pass", "pt"),
+        ("match p:\n    case _:\n        pass", None),
+    ],
+)
+def test_last_assigned_name(source, expected):
+    assert last_name(source) == expected
+
+
+def make_source(body):
+    return "def _afar_magic_():\n" + textwrap.indent(textwrap.dedent(body), "    ")
+
+
+@pytest.mark.parametrize(
+    ("body", "display", "rv"),
+    [
+        ("x = 1\nx + 1", True, 2),
+        ("x = 1", False, None),
+        ("x = 1\nif x:\n    x + 1", False, None),
+        ("for i in range(2):\n    i", False, None),
+        ("print", True, print),
+        ("x = 1\n(x\n +\n 2)", True, 3),
+    ],
+)
+def test_create_func_display_expr(body, display, rv):
+    func, display_expr, _ = create_func(make_source(body), {}, True)
+    assert display_expr is display
+    assert func() == rv
+    # Outside IPython, the final expression is not returned
+    func, display_expr, _ = create_func(make_source(body), {}, False)
+    assert display_expr is False
+    assert func() is None
+
+
+def test_default_names_skip_comprehension_variable():
+    with afar.run as results, afar.locally:
+        y = [i for i in range(3)]
+    assert results == {"y": [0, 1, 2]}
+
+
+def test_default_names_skip_exception_name():
+    with afar.run as results, afar.locally:
+        try:
+            x = 1
+        except Exception as e:  # noqa: F841
+            pass
+    assert results == {"x": 1}

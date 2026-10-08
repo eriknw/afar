@@ -3,59 +3,131 @@
 This callable object is able to provide the values of the requested argument
 names and return the final expression so it can be displayed.
 """
-import dis
-from types import FunctionType
+import ast
 
 from dask.distributed import Future
 from innerscope import scoped_function
 
 from ._reprs import get_repr_methods
-from ._utils import code_replace, is_ipython
+from ._utils import is_ipython
 
 
-def endswith_expr(func):
-    """Does the function end with an expression (not assigment or return)"""
-    code = func.__code__
-    co_code = code.co_code
-    return (
-        len(co_code) > 6
-        and co_code[-6] == dis.opmap["POP_TOP"]
-        and co_code[-4] == dis.opmap["LOAD_CONST"]
-        and co_code[-2] == dis.opmap["RETURN_VALUE"]
-        and code.co_consts[co_code[-3]] is None
-    )
+class _AssignedNames(ast.NodeVisitor):
+    """Collect the names a block of statements binds, in the order they are bound.
+
+    Nested scopes (functions, lambdas, classes, and comprehensions) bind names of their own,
+    so only their names (for functions and classes) and the parts evaluated in the enclosing
+    scope are visited.
+    """
+
+    def __init__(self):
+        self.names = []
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Store):
+            self.names.append(node.id)
+
+    def visit_Assign(self, node):
+        self.visit(node.value)
+        for target in node.targets:
+            self.visit(target)
+
+    def visit_AugAssign(self, node):
+        self.visit(node.value)
+        self.visit(node.target)
+
+    def visit_AnnAssign(self, node):
+        # `x: int` declares `x` without binding it
+        if node.value is not None:
+            self.visit(node.value)
+            self.visit(node.target)
+
+    def visit_NamedExpr(self, node):
+        self.visit(node.value)
+        self.visit(node.target)
+
+    def visit_For(self, node):
+        self.visit(node.iter)
+        self.visit(node.target)
+        for stmt in node.body + node.orelse:
+            self.visit(stmt)
+
+    visit_AsyncFor = visit_For
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.names.append(alias.asname or alias.name.partition(".")[0])
+
+    def visit_ImportFrom(self, node):
+        for alias in node.names:
+            self.names.append(alias.asname or alias.name)
+
+    def visit_ExceptHandler(self, node):
+        # Skip `node.name`: Python deletes it when the handler finishes
+        if node.type is not None:
+            self.visit(node.type)
+        for stmt in node.body:
+            self.visit(stmt)
+
+    def visit_FunctionDef(self, node):
+        for expr in node.decorator_list:
+            self.visit(expr)
+        self.visit(node.args)
+        self.names.append(node.name)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_arguments(self, node):
+        # Only the defaults are evaluated in the enclosing scope
+        for expr in node.defaults + node.kw_defaults:
+            if expr is not None:
+                self.visit(expr)
+
+    def visit_Lambda(self, node):
+        self.visit(node.args)
+
+    def visit_ClassDef(self, node):
+        for expr in node.decorator_list + node.bases + node.keywords:
+            self.visit(expr)
+        self.names.append(node.name)
+
+    def _visit_comprehension(self, node):
+        # Only the first iterable is evaluated in the enclosing scope
+        self.visit(node.generators[0].iter)
+
+    visit_ListComp = visit_SetComp = visit_DictComp = visit_GeneratorExp = _visit_comprehension
+
+    def _visit_capture(self, node):
+        # `case [x, *rest]`, `case {**rest}`, and `case Point() as p` bind names
+        self.generic_visit(node)
+        name = node.rest if isinstance(node, ast.MatchMapping) else node.name
+        if name is not None:
+            self.names.append(name)
+
+    visit_MatchAs = visit_MatchStar = visit_MatchMapping = _visit_capture
 
 
-def return_expr(func):
-    """Create a new function from func that returns the final expression"""
-    code = func.__code__
-    # remove POP_TOP and LOAD_CONST (None)
-    co_code = code.co_code[:-6] + code.co_code[-2:]
-    code = code_replace(code, co_code=co_code)
-    rv = FunctionType(
-        code,
-        func.__globals__,
-        name=func.__name__,
-        argdefs=func.__defaults__,
-        closure=func.__closure__,
-    )
-    rv.__kwdefaults__ = func.__kwdefaults__
-    return rv
+def last_assigned_name(stmts):
+    """The name bound last by the statements, or None"""
+    visitor = _AssignedNames()
+    for stmt in stmts:
+        visitor.visit(stmt)
+    return visitor.names[-1] if visitor.names else None
 
 
 def create_func(source, globals_dict, is_in_ipython):
-    code = compile(
-        source,
-        "<afar>",
-        "exec",
-    )
+    tree = ast.parse(source, "<afar>")
+    funcdef = tree.body[0]
+    last = funcdef.body[-1]
+    display_expr = is_in_ipython and isinstance(last, ast.Expr)
+    if display_expr:
+        # Return the final expression so it can be displayed, like the last line of a cell
+        funcdef.body[-1] = ast.copy_location(ast.Return(last.value), last)
+    code = compile(tree, "<afar>", "exec")
     locals_dict = {}
     exec(code, globals_dict, locals_dict)
     func = locals_dict["_afar_magic_"]
-    display_expr = is_in_ipython and endswith_expr(func)
-    if display_expr:
-        func = return_expr(func)
-    return func, display_expr
+    return func, display_expr, funcdef
 
 
 class MagicFunction:
@@ -82,7 +154,7 @@ class MagicFunction:
     def __setstate__(self, state):
         outer_scope = state.pop("outer_scope")
         self.__dict__.update(state)
-        func, _ = create_func(self._source, {}, self._display_expr)
+        func, _, _ = create_func(self._source, {}, self._display_expr)
         self._scoped = scoped_function(func, outer_scope)
 
 
@@ -90,13 +162,13 @@ def cadabra(context_body, where, names, data, global_ns, local_ns):
     # Create a new function from the code block of the context.
     # For now, we require that the source code is available.
     source = "def _afar_magic_():\n" + "".join(context_body)
-    func, display_expr = create_func(source, global_ns, is_ipython())
+    func, display_expr, funcdef = create_func(source, global_ns, is_ipython())
 
     # If no variable names were given, only get the last assignment
     if not names:
-        for inst in list(dis.get_instructions(func)):
-            if inst.opname in {"STORE_NAME", "STORE_FAST", "STORE_DEREF", "STORE_GLOBAL"}:
-                names = (inst.argval,)
+        name = last_assigned_name(funcdef.body)
+        if name is not None:
+            names = (name,)
 
     # Use innerscope!  We only keep the globals, locals, and closures we need.
     scoped = scoped_function(func, data)
