@@ -8,15 +8,22 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the runs for its previous pushes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   pip:
     name: pip (${{ matrix.os }}, ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     # Free-threaded 3.15 builds psutil, tornado, and PyYAML from source; do not fail on it yet
     continue-on-error: ${{ matrix.python-version == '3.15t' }}
     defaults:
       run:
-        shell: bash -l {0}
+        # GitHub's bash: `-eo pipefail`, and no login shell, which would reorder PATH on macOS
+        shell: bash
     strategy:
       # One failing cell should not cancel the others.
       fail-fast: false
@@ -46,22 +53,23 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]" coverage ipykernel ipywidgets nbconvert
+          python -m pip install -e ".[test]" coverage ipykernel ipywidgets nbconvert
+          python -m pip check
       - name: PyTest
         run: |
           python -c 'import sys, afar, dask, distributed, innerscope; print(sys.version); print("afar", afar.__version__, "distributed", distributed.__version__, "innerscope", innerscope.__version__, innerscope.cfg.default_method)'
           # Test both of innerscope's methods, and without coverage too: coverage tools use
           # `sys.settrace` or `sys.monitoring`, which innerscope must work with, but not depend on.
-          pytest --color=yes --innerscope-method trace
-          pytest --color=yes --innerscope-method bytecode
-          coverage run -m pytest --color=yes
+          python -m pytest --color=yes --innerscope-method trace
+          python -m pytest --color=yes --innerscope-method bytecode
+          python -m coverage run -m pytest --color=yes
       - name: Notebook test
         run: |
-          jupyter nbconvert --to notebook --execute afar/tests/test_notebook.ipynb --output-dir "$RUNNER_TEMP"
+          python -m jupyter nbconvert --to notebook --execute afar/tests/test_notebook.ipynb --output-dir "$RUNNER_TEMP"
       - name: Coverage
         run: |
-          coverage xml
-          coverage report --show-missing
+          python -m coverage xml
+          python -m coverage report --show-missing
       # act, which runs these workflows locally, sets ACT; GitHub does not.
       - name: Coveralls
         if: ${{ !env.ACT }}
@@ -74,9 +82,11 @@ jobs:
   conda:
     name: conda (${{ matrix.os }}, ${{ matrix.python-version }}, ${{ matrix.versions }} versions)
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     defaults:
       run:
-        shell: bash -l {0}
+        # A login shell activates the conda environment; `-e` stops at the first failure
+        shell: bash -el {0}
     strategy:
       fail-fast: false
       matrix:
@@ -109,21 +119,22 @@ jobs:
             # Keep these in sync with `dependencies` in pyproject.toml
             versions="distributed=2021.12.0 innerscope=0.8.0"
           else
-            versions="distributed innerscope"
+            versions="distributed>=2021.12.0 innerscope>=0.8.0"
           fi
           conda install -y $versions pytest coverage ipython ipykernel ipywidgets nbconvert
-          pip install -e . --no-deps
+          python -m pip install -e . --no-deps
+          python -m pip check
       - name: PyTest
         run: |
           python -c 'import sys, afar, dask, distributed, innerscope; print(sys.version); print("afar", afar.__version__, "distributed", distributed.__version__, "innerscope", innerscope.__version__, innerscope.cfg.default_method)'
-          coverage run -m pytest --color=yes
+          python -m coverage run -m pytest --color=yes
       - name: Notebook test
         run: |
-          jupyter nbconvert --to notebook --execute afar/tests/test_notebook.ipynb --output-dir "$RUNNER_TEMP"
+          python -m jupyter nbconvert --to notebook --execute afar/tests/test_notebook.ipynb --output-dir "$RUNNER_TEMP"
       - name: Coverage
         run: |
-          coverage xml
-          coverage report --show-missing
+          python -m coverage xml
+          python -m coverage report --show-missing
       - name: Coveralls
         if: ${{ !env.ACT }}
         uses: coverallsapp/github-action@v2

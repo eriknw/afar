@@ -1,6 +1,7 @@
 recursive-include afar *.py
 include afar/tests/test_notebook.ipynb
 include setup.py
+include conftest.py
 include README.md
 include LICENSE
 include MANIFEST.in

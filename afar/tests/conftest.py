@@ -4,20 +4,8 @@ import time
 import pytest
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--innerscope-method",
-        action="store",
-        default=None,
-        choices=["bytecode", "trace"],
-        help=(
-            "Select innerscope's default method, here and on the workers of the test cluster "
-            "(default: innerscope's default for this Python)"
-        ),
-    )
-
-
 def set_innerscope_method(method):
+    # Defined here, not in the root conftest.py, so that workers can import it for `client.run`
     import innerscope
 
     innerscope.cfg.default_method = method
