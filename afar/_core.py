@@ -9,7 +9,6 @@ from weakref import WeakKeyDictionary, WeakSet
 
 from dask import distributed
 from dask.distributed import get_worker
-from distributed.scheduler import KilledWorker
 
 from ._abra import cadabra
 from ._inspect import analyze_with, find_with_start, get_lines
@@ -326,8 +325,9 @@ class Run:
     @classmethod
     def _handle_done(cls, key, future):
         cls._running.discard(future)
-        # A task that is cancelled before it runs, or whose worker dies, never sends "finish",
-        # so stop waiting for it.  (Other errors are sent to the output by `run_afar`.)
+        # A task that is cancelled, whose worker dies, or whose inputs failed never sends
+        # "finish", so stop waiting for it.  When `run_afar` itself raised, it already sent the
+        # error as "stderr" and will send "finish"; popping here could drop that "stderr".
         if future.status == "cancelled":
             message = None
         elif future.status == "error":
@@ -335,9 +335,9 @@ class Run:
                 exc = future.exception()
             except Exception:  # pragma: no cover (safety, as when the client is closing)
                 return
-            if not isinstance(exc, KilledWorker):
+            if getattr(exc, "_afar_reported_by", None) == key:
                 return
-            message = f"afar failed: {exc}\n"
+            message = f"afar failed: {exc!r}\n"
         else:
             return
         entry = cls._outputs.pop(key, None)
@@ -384,7 +384,9 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
         if return_expr:
             rv[RETURN_VALUE_KEY] = results.return_value
 
-        if magic_func._display_expr and not magic_func._quiet and worker is not None:
+        # `getattr`: a MagicFunction pickled by an afar before `_quiet` existed has none
+        quiet = getattr(magic_func, "_quiet", False)
+        if magic_func._display_expr and not quiet and worker is not None:
             # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
             # better to add the return value to rv and call repr_afar as a separate task.
             # Also, pretty_repr must be msgpack serializable if done via events.  Hence,
@@ -393,11 +395,16 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
             if pretty_repr is not None:
                 worker.log_event(channel, (unique_key, "display_expr", pretty_repr))
                 send_finish = False
-    except BaseException:
+    except BaseException as exc:
         # Show the error where the context's output goes; a context that brings back no names
         # has no future whose `result()` would raise it.
         if capture_print and worker is not None:
             worker.log_event(channel, (unique_key, "stderr", traceback.format_exc()))
+            try:
+                # Tell `Run._handle_done` that this context reported its own error
+                exc._afar_reported_by = unique_key
+            except Exception:  # pragma: no cover (exceptions that refuse attributes)
+                pass
         raise
     finally:
         if capture_print and worker is not None and send_finish:

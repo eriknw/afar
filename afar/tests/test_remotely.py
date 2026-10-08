@@ -131,6 +131,21 @@ def test_remote_error(client, wait_for_outputs):
     wait_for_outputs()
 
 
+def test_input_failed(client, capsys, wait_for_outputs):
+    # The second context never runs because its input failed, so it never sends its own error
+    # or "finish"; afar must still report it and stop waiting
+    with afar.run as results, afar.remotely:
+        x = 1 / 0
+    data = results
+    with afar.run(data=data), afar.remotely:
+        print("x + 1 =", x + 1)
+    wait_for_outputs()
+    err = capsys.readouterr().err
+    assert "afar failed: ZeroDivisionError" in err
+    # The first context reported its own error once, as a traceback, not as "afar failed"
+    assert err.count("ZeroDivisionError") == 2
+
+
 def test_worker_dies(capsys, wait_for_outputs):
     # A worker that dies in the context never sends "finish"; afar must stop waiting for it.
     # Use a cluster of our own that does not retry the task, and leave the default client alone.
