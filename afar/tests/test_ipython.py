@@ -87,6 +87,23 @@ def test_magic_usage_errors(ip_afar, cell, match):
     assert match in str(result.error_in_exec)
 
 
+def test_remote_cell_and_line_magic(ip_afar, client, capsys, wait_for_outputs):
+    from dask.distributed import Future
+
+    run_cell(ip_afar, "%%afar x, y\nx = 1\ny = x + 1\n")
+    assert isinstance(ip_afar.user_ns["x"], Future)
+    assert ip_afar.user_ns["y"].result() == 2
+
+    # `run` returns a future of the final expression; `get` returns its value
+    run_cell(ip_afar, "z = %afar x + y\n")
+    assert ip_afar.user_ns["z"].result() == 3
+    run_cell(ip_afar, "w = %afar -g x + y + 1\n")
+    assert ip_afar.user_ns["w"] == 4
+    wait_for_outputs()
+    # Both final expressions are displayed asynchronously, in either order
+    assert sorted(capsys.readouterr().out.split()) == ["3", "4"]
+
+
 def test_remote_display_and_print(ip_afar, client, capsys, wait_for_outputs):
     run_cell(ip_afar, "with afar.run, afar.remotely:\n    print('hello')\n    40 + 2\n")
     wait_for_outputs()

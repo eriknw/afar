@@ -197,6 +197,7 @@ class Run:
                 capture_print,
                 self._channel,
                 unique_key,
+                return_expr and display_expr,
                 pure=False,
                 **submit_kwargs,
             )
@@ -220,6 +221,14 @@ class Run:
                     future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
                     weak_futures.add(future)
                     data[name] = future
+            if return_expr and display_expr:
+                # The line magic, as in `z = %afar x + y`, returns the final expression
+                return_future = client.submit(
+                    get_afar, remote_dict, RETURN_VALUE_KEY, **submit_kwargs
+                )
+                weak_futures.add(return_future)
+                if self._gather_data:
+                    return_future = return_future.result()
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
@@ -309,7 +318,7 @@ class Get(Run):
     _gather_data = True
 
 
-def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
+def run_afar(magic_func, names, futures, capture_print, channel, unique_key, return_expr=False):
     worker = None
     send_finish = False
     if capture_print:
@@ -333,6 +342,8 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
             results = sfunc()
 
         rv = {key: results[key] for key in names}
+        if return_expr:
+            rv[RETURN_VALUE_KEY] = results.return_value
 
         if magic_func._display_expr and worker is not None:
             # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
@@ -347,6 +358,10 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
         if capture_print and worker is not None and send_finish:
             worker.log_event(channel, (unique_key, "finish", None))
     return rv
+
+
+# Not a valid identifier, so it cannot be the name of a variable
+RETURN_VALUE_KEY = "afar return value"
 
 
 def get_afar(d, k):
