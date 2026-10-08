@@ -54,14 +54,12 @@ class Run:
         return type(self)(*names, client=client, data=data)
 
     def __enter__(self):
-        self._frame = currentframe().f_back
-        if self._is_singleton:
-            if self.data:
-                raise RuntimeError("uh oh!")
-            self.data = {}
+        frame = currentframe().f_back
+        if self._is_singleton and self.data:
+            raise RuntimeError("uh oh!")
 
-        lines = get_lines(self._frame)
-        with_start = find_with_start(lines, self._frame.f_lineno)
+        lines = get_lines(frame)
+        with_start = find_with_start(lines, frame.f_lineno)
         num_with, body_start, body_end = analyze_with(lines, with_start)
         if num_with < 2:
             # Best effort detection.  This fails if there is a context *before* afar.run
@@ -72,6 +70,10 @@ class Run:
                 f"...     pass\n\n"
                 f"Please specify a location such as adding `, remotely`."
             )
+        # Keep state only once the context can run, so a failed `__enter__` leaves none behind
+        self._frame = frame
+        if self._is_singleton:
+            self.data = {}
         self._body_start = body_start
         self._body_end = body_end
         self._lines = lines
@@ -83,14 +85,13 @@ class Run:
             if exc_type is None:
                 raise RuntimeError("uh oh!")
             return False
-        if exc_type is None or exc_traceback.tb_frame is not self._frame:
-            return False
-        where = find_where(exc_type, exc_value)
-        if where is None:
-            # The exception is valid
-            return False
-
+        where = None
+        if exc_type is not None and exc_traceback.tb_frame is self._frame:
+            where = find_where(exc_type, exc_value)
         try:
+            if where is None:
+                # No exception, or a real one: let it propagate, but still reset the state
+                return False
             return self._exit(where)
         except KeyboardInterrupt as exc:
             # Cancel all pending tasks

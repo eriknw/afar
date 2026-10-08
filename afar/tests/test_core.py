@@ -122,3 +122,28 @@ def end_of_file(data):
     with afar.run(data=data), locally:
         x = 10
         y = 2 * x
+
+
+def test_failed_context_leaves_no_state():
+    # The singleton must recover from a context that fails before it runs: a one-line body
+    # (`__enter__` raises), a typo in the location (`__exit__` sees a NameError), and a
+    # second context manager that is not a location (the body runs here)
+    import contextlib
+
+    with raises(RuntimeError, match="new line"):
+        # fmt: off
+        with afar.run, locally: pass
+        # fmt: on
+    with raises(NameError, match="locallyy"):
+        with afar.run, locallyy:
+            pass
+    with afar.run, contextlib.nullcontext():
+        pass
+    assert afar.run.data is None
+    with afar.run() as results, locally:
+        x = 1
+    assert results == {"x": 1}
+    assert afar.run.data is None
+    with afar.run as results, locally:
+        y = 2
+    assert results == {"y": 2}
