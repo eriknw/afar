@@ -19,6 +19,8 @@ class Run:
     _gather_data = False
     # Used to update outputs asynchronously
     _outputs = {}
+    # Futures of remote contexts that have not finished; see `_run`
+    _running = set()
     _channel = "afar-" + uuid4().hex
 
     def __init__(self, *names, client=None, data=None):
@@ -199,6 +201,10 @@ class Run:
                 **submit_kwargs,
             )
             weak_futures.add(remote_dict)
+            # Hold `remote_dict` until it finishes, then let go.  (Calling `release` instead
+            # cancels it if no futures depend on it, as when a context only prints.)
+            self._running.add(remote_dict)
+            remote_dict.add_done_callback(self._running.discard)
             magic_func.release()  # Let go ASAP
 
             if self._gather_data:
@@ -207,7 +213,6 @@ class Run:
                     for name in names
                 }
                 weak_futures.update(futures_to_name)
-                remote_dict.release()  # Let go ASAP
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     data[futures_to_name[future]] = result
             else:
@@ -215,7 +220,6 @@ class Run:
                     future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
                     weak_futures.add(future)
                     data[name] = future
-                remote_dict.release()  # Let go ASAP
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
