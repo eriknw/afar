@@ -163,3 +163,16 @@ with
     ):
         x = 1
     assert results == {"x": 1}
+
+
+def test_name_not_assigned():
+    with raises(KeyError, match="'y' was not assigned in the afar context"):
+        with afar.run, locally:
+            while True:
+                x = 1
+                break
+            else:
+                y = 2
+    with raises(KeyError, match="'w' was not assigned in the afar context"):
+        with afar.run("x", "w"), locally:
+            x = 1

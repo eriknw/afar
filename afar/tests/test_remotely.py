@@ -104,6 +104,13 @@ def test_print_is_captured(client, capsys, wait_for_outputs):
     assert "oops\n" in captured.err
 
 
+def test_remote_name_not_assigned(client):
+    with afar.run("x", "w") as results, afar.remotely:
+        x = 1
+    with pytest.raises(KeyError, match="'w' was not assigned in the afar context"):
+        results["x"].result()
+
+
 def test_remote_error(client):
     with afar.run as results, afar.remotely:
         x = 1 / 0

@@ -237,8 +237,7 @@ class Run:
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
             results = self._magic_func()
-            for name in names:
-                data[name] = results[name]
+            data.update(get_names(results, names))
             if display_expr:
                 if results.return_value is not None and not self._magic_func._quiet:
                     # As remotely (see `repr_afar`) and as IPython does, don't display None
@@ -363,7 +362,7 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
             sfunc = magic_func._scoped.bind(futures)
             results = sfunc()
 
-        rv = {key: results[key] for key in names}
+        rv = get_names(results, names)
         if return_expr:
             rv[RETURN_VALUE_KEY] = results.return_value
 
@@ -379,6 +378,22 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
     finally:
         if capture_print and worker is not None and send_finish:
             worker.log_event(channel, (unique_key, "finish", None))
+    return rv
+
+
+def get_names(results, names):
+    """The values of `names` in the inner scope, with a helpful error if one was not assigned"""
+    rv = {}
+    for name in names:
+        try:
+            rv[name] = results[name]
+        except KeyError:
+            raise KeyError(
+                f"{name!r} was not assigned in the afar context, so it cannot be brought back.  "
+                "Without names, as in `with afar.run, remotely:`, afar brings back the last "
+                "name the context assigns; to choose names, give them to `afar.run`, as in "
+                "`with afar.run('a', 'b'), remotely:`"
+            ) from None
     return rv
 
 
