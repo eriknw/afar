@@ -111,6 +111,19 @@ def test_remote_error(client):
         results["x"].result()
 
 
+def test_cancel(client, wait_for_outputs):
+    run = afar.run()
+    # No worker has this resource, so the context waits until it is cancelled
+    with run as results, afar.remotely(resources={"unavailable": 1}):
+        x = 1
+    future = results["x"]
+    assert future.status == "pending"
+    run.cancel()
+    # The context never ran, so it never sent "finish"; this waits for afar to give up on it
+    wait_for_outputs()
+    assert future.status == "cancelled"
+
+
 def test_remote_in_function(client):
     def f():
         with afar.get, afar.remotely:

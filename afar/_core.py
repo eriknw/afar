@@ -1,6 +1,7 @@
 """Define the user-facing `run` object; this is where it all comes together."""
 
 import sys
+from functools import partial
 from inspect import currentframe
 from uuid import uuid4
 from weakref import WeakKeyDictionary, WeakSet
@@ -206,7 +207,7 @@ class Run:
             # Hold `remote_dict` until it finishes, then let go.  (Calling `release` instead
             # cancels it if no futures depend on it, as when a context only prints.)
             self._running.add(remote_dict)
-            remote_dict.add_done_callback(self._running.discard)
+            remote_dict.add_done_callback(partial(self._handle_done, unique_key))
             magic_func.release()  # Let go ASAP
 
             if self._gather_data:
@@ -283,20 +284,21 @@ class Run:
         # XXX: can we assume all messages from a single task arrive in FIFO order?
         _, msg = event
         key, action, payload = msg
-        if key not in cls._outputs:
+        entry = cls._outputs.get(key)
+        if entry is None:
             return
-        out, is_updated = cls._outputs[key]
+        out, is_updated = entry
         if out is not None:
             if action == "begin":
                 if is_updated:
                     out.outputs = type(out.outputs)()
                     out.append_stdout("\N{SPARKLES} Running afar... (restarted) \N{SPARKLES}")
-                    cls._outputs[key][1] = False  # is not updated
+                    entry[1] = False  # is not updated
             else:
                 if not is_updated:
                     # Clear the "Running afar..." message
                     out.outputs = type(out.outputs)()
-                    cls._outputs[key][1] = True  # is updated
+                    entry[1] = True  # is updated
                 # ipywidgets.Output is pretty slow if there are lots of messages
                 if action == "stdout":
                     out.append_stdout(payload)
@@ -308,9 +310,20 @@ class Run:
             print(payload, end="", file=sys.stderr)  # noqa: T201
         if action == "display_expr":
             display_repr(payload, out=out)
-            del cls._outputs[key]
+            cls._outputs.pop(key, None)
         elif action == "finish":
-            del cls._outputs[key]
+            cls._outputs.pop(key, None)
+
+    @classmethod
+    def _handle_done(cls, key, future):
+        cls._running.discard(future)
+        if future.status == "cancelled":
+            # A task cancelled before it runs never sends "finish", so stop waiting for it
+            entry = cls._outputs.pop(key, None)
+            if entry is not None and entry[0] is not None:
+                out = entry[0]
+                out.outputs = type(out.outputs)()
+                out.append_stderr("afar was cancelled\n")
 
 
 class Get(Run):
