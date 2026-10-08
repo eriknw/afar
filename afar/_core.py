@@ -313,9 +313,9 @@ class Run:
                 elif action == "stderr":
                     out.append_stderr(payload)
         elif action == "stdout":
-            print(payload, end="")  # noqa: T201
+            print(payload, end="")
         elif action == "stderr":
-            print(payload, end="", file=sys.stderr)  # noqa: T201
+            print(payload, end="", file=sys.stderr)
         if action == "display_expr":
             display_repr(payload, out=out)
             cls._outputs.pop(key, None)

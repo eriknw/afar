@@ -126,6 +126,9 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
+[tool.check-manifest]
+ignore = [".flake8", ".pre-commit-config.yaml"]
+
 [tool.codespell]
 # "THIRDPARTY" is an isort section name, not a misspelling.
 ignore-words-list = "thirdparty"
@@ -134,6 +137,8 @@ ignore-words-list = "thirdparty"
 # https://docs.astral.sh/ruff/
 line-length = 100
 target-version = "py310"
+# The notebook test is executed by nbconvert in CI, not linted
+extend-exclude = ["afar/tests/test_notebook.ipynb"]
 
 [tool.ruff.lint]
 unfixable = [
@@ -204,6 +209,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports (w/o defining `__all__`)
+# Ruff-only codes live here, not in `noqa` comments, which yesqa (with flake8) would remove
+"afar/_core.py" = ["T201"]  # Print what remote contexts print
+"afar/_reprs.py" = ["T201"]
+"afar/_inspect.py" = ["TRY004"]
+"afar/_where.py" = ["B018"]  # Names evaluated on purpose to learn NameError's message
 "afar/tests/*py" = [
     "S101", "S301", "S603", "T201", "D103", "D100",  # Allow assert, print, pickle, subprocess, and no docstring
     # afar tests are full of names that are only used remotely, or are undefined on purpose

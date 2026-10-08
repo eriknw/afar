@@ -139,5 +139,5 @@ def analyze_with(lines, with_start):
         raise RuntimeError("Failed to analyze the context!") from exc
     node = tree.body[0]
     if not isinstance(node, ast.With):
-        raise RuntimeError("Failed to analyze the context!")  # noqa: TRY004
+        raise RuntimeError("Failed to analyze the context!")
     return len(node.items), body_start, body_end

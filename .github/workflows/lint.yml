@@ -23,3 +23,6 @@ jobs:
         with:
           python-version: "3.14"
       - uses: pre-commit/action@v3.0.1
+        env:
+          # As pre-commit.ci does (`ci.skip`); this workflow may run on main
+          SKIP: no-commit-to-branch

@@ -2,17 +2,17 @@ from ._exceptions import AfarException
 
 _errors_to_locations = {}
 try:
-    remotely  # noqa: B018
+    remotely
 except NameError as exc:
     _errors_to_locations[exc.args[0]] = "remotely"
 
 try:
-    locally  # noqa: B018
+    locally
 except NameError as exc:
     _errors_to_locations[exc.args[0]] = "locally"
 
 try:
-    later  # noqa: B018
+    later
 except NameError as exc:
     _errors_to_locations[exc.args[0]] = "later"
 

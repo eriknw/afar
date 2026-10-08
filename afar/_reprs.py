@@ -94,7 +94,7 @@ def display_repr(results, out=None):
     val, method_name, is_exception = results
     if is_exception:
         if out is None:
-            print(val, file=sys.stderr)  # noqa: T201
+            print(val, file=sys.stderr)
         else:
             out.append_stderr(val)
         return
