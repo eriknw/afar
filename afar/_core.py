@@ -226,9 +226,11 @@ class Run:
             for name in names:
                 data[name] = results[name]
             if display_expr:
-                from IPython.display import display
+                if results.return_value is not None:
+                    # As remotely (see `repr_afar`) and as IPython does, don't display None
+                    from IPython.display import display
 
-                display(results.return_value)
+                    display(results.return_value)
                 if return_expr:
                     return_future = results.return_value
         elif where == "later":
@@ -308,12 +310,14 @@ class Get(Run):
 
 
 def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
+    worker = None
+    send_finish = False
     if capture_print:
         try:
             worker = get_worker()
             send_finish = True
         except ValueError:
-            worker = None
+            pass
     try:
         if capture_print and worker is not None:
             worker.log_event(channel, (unique_key, "begin", None))
