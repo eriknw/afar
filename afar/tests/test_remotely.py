@@ -123,11 +123,30 @@ def test_remote_error_is_shown(client, capsys, wait_for_outputs):
     assert "ZeroDivisionError" in captured.err
 
 
-def test_remote_error(client):
+def test_remote_error(client, wait_for_outputs):
     with afar.run as results, afar.remotely:
         x = 1 / 0
     with pytest.raises(ZeroDivisionError):
         results["x"].result()
+    wait_for_outputs()
+
+
+def test_worker_dies(capsys, wait_for_outputs):
+    # A worker that dies in the context never sends "finish"; afar must stop waiting for it.
+    # Use a cluster of our own that does not retry the task, and leave the default client alone.
+    with Client(
+        n_workers=1, threads_per_worker=1, dashboard_address=":0", set_as_default=False
+    ) as own_client:
+        own_client.run_on_scheduler(_no_retries)
+        with afar.run as results, afar.remotely(client=own_client):
+            __import__("os")._exit(1)
+        assert results == {}
+        wait_for_outputs(timeout=60)
+    assert "afar failed" in capsys.readouterr().err
+
+
+def _no_retries(dask_scheduler):
+    dask_scheduler.allowed_failures = 0
 
 
 def test_cancel(client, wait_for_outputs):

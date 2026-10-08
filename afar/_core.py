@@ -9,6 +9,7 @@ from weakref import WeakKeyDictionary, WeakSet
 
 from dask import distributed
 from dask.distributed import get_worker
+from distributed.scheduler import KilledWorker
 
 from ._abra import cadabra
 from ._inspect import analyze_with, find_with_start, get_lines
@@ -325,13 +326,29 @@ class Run:
     @classmethod
     def _handle_done(cls, key, future):
         cls._running.discard(future)
+        # A task that is cancelled before it runs, or whose worker dies, never sends "finish",
+        # so stop waiting for it.  (Other errors are sent to the output by `run_afar`.)
         if future.status == "cancelled":
-            # A task cancelled before it runs never sends "finish", so stop waiting for it
-            entry = cls._outputs.pop(key, None)
-            if entry is not None and entry[0] is not None:
-                out = entry[0]
-                out.outputs = type(out.outputs)()
-                out.append_stderr("afar was cancelled\n")
+            message = None
+        elif future.status == "error":
+            try:
+                exc = future.exception()
+            except Exception:  # pragma: no cover (safety, as when the client is closing)
+                return
+            if not isinstance(exc, KilledWorker):
+                return
+            message = f"afar failed: {exc}\n"
+        else:
+            return
+        entry = cls._outputs.pop(key, None)
+        if entry is None:
+            return
+        out = entry[0]
+        if out is not None:
+            out.outputs = type(out.outputs)()
+            out.append_stderr(message or "afar was cancelled\n")
+        elif message is not None:
+            print(message, end="", file=sys.stderr)
 
 
 class Get(Run):
