@@ -122,3 +122,6 @@ venv.bak/
 
 # Dask worker
 dask-worker-space/
+
+# Linters
+.ruff_cache/
