@@ -13,7 +13,7 @@ def run_cell(ip, cell):
 
 @pytest.fixture(scope="module")
 def ip_afar(ip):
-    run_cell(ip, "import afar\n%load_ext afar\nhere = afar.locally")
+    run_cell(ip, "import afar\n%load_ext afar\nhere = afar.locally\nnot_a_where = 1")
     return ip
 
 
@@ -23,17 +23,17 @@ def test_display_final_expression_locally(ip_afar, capsys):
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("body", "out"),
     [
-        "x = 1",
-        "x = 1\nif x:\n    x + 1",
-        "print('hi')",  # `print` returns None, which is not displayed
+        ("x = 1", ""),
+        ("x = 1\nif x:\n    x + 1", ""),
+        ("print('hi')", "hi\n"),  # `print` returns None, which is not displayed
     ],
 )
-def test_no_display_locally(ip_afar, capsys, body):
+def test_no_display_locally(ip_afar, capsys, body, out):
     cell = "with afar.run, afar.locally:\n" + "".join(f"    {line}\n" for line in body.split("\n"))
     run_cell(ip_afar, cell)
-    assert capsys.readouterr().out in {"", "hi\n"}
+    assert capsys.readouterr().out == out
 
 
 def test_semicolon_suppresses_display_locally(ip_afar, capsys):
@@ -81,9 +81,9 @@ def test_new_magic(ip_afar):
     [
         ("%%afar -r not_defined\nx = 1\n", "not found in local namespace"),
         ("%%afar -w not_defined\nx = 1\n", "not found in local namespace"),
-        ("%%afar -w here -w here\nx = 1\n", None),
+        ("%%afar -w here -w here\nx = 1\n", "-w may not be given more than once"),
+        ("%%afar -w here --where here\nx = 1\n", "may not be used at the same time"),
         ("%%afar -w here 1x\nx = 1\n", "bad variable names"),
-        ("not_a_where = 1", None),
         ("%%afar -w not_a_where\nx = 1\n", "must be of type Where"),
     ],
 )
@@ -91,8 +91,6 @@ def test_magic_usage_errors(ip_afar, cell, match):
     from IPython.core.error import UsageError
 
     result = ip_afar.run_cell(cell, store_history=True)
-    if match is None:
-        return
     assert isinstance(result.error_in_exec, UsageError)
     assert match in str(result.error_in_exec)
 

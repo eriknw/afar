@@ -93,6 +93,11 @@ class AfarMagicBase(Magics):
             strict=False,
             preserve_non_opts=True,
         )
+        for key, value in opts.items():
+            # IPython collects a repeated option into a list
+            if isinstance(value, list):
+                dashes = "-" if len(key) == 1 else "--"
+                raise UsageError(f"{dashes}{key} may not be given more than once")
         if "r" in opts and "run" in opts:
             raise UsageError("-r and --run options may not be used at the same time")
         if "d" in opts and "data" in opts:
