@@ -157,3 +157,23 @@ def bodies_module(request, tmp_path_factory):
 def test_body(bodies_module, index):
     expected = getattr(bodies_module, f"plain_{index}")()
     assert getattr(bodies_module, f"with_afar_{index}")() == {"z": expected}
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="`lazy import` is new in Python 3.15")
+@pytest.mark.parametrize("where", ["locally", "remotely"])
+def test_lazy_import(request, tmp_path, where):
+    # `lazy import` is allowed only at module level, so the context must be there too
+    if where == "remotely":
+        request.getfixturevalue("client")
+    path = tmp_path / f"afar_lazy_{where}.py"
+    path.write_text(
+        "import afar\n"
+        f"with afar.get as results, afar.{where}:\n"
+        "    lazy import json\n"
+        "    lazy from os import path as os_path\n"
+        "    s = json.dumps([os_path.basename('a/b')])\n"
+    )
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.results == {"s": '["b"]'}

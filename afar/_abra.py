@@ -119,6 +119,10 @@ def last_assigned_name(stmts):
 def create_func(source, globals_dict, is_in_ipython):
     tree = ast.parse(source, "<afar>")
     funcdef = tree.body[0]
+    for node in ast.walk(funcdef):
+        # Python 3.15 (PEP 810) allows `lazy import` at module level, but not in a function
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and getattr(node, "is_lazy", False):
+            node.is_lazy = 0
     last = funcdef.body[-1]
     display_expr = is_in_ipython and isinstance(last, ast.Expr)
     if display_expr:
