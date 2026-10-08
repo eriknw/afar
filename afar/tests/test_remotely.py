@@ -142,8 +142,8 @@ def test_input_failed(client, capsys, wait_for_outputs):
     wait_for_outputs()
     err = capsys.readouterr().err
     assert "afar failed: ZeroDivisionError" in err
-    # The first context reported its own error once, as a traceback, not as "afar failed"
-    assert err.count("ZeroDivisionError") == 2
+    # Only for the second context: the first reported its own error, as a traceback
+    assert err.count("afar failed") == 1
 
 
 def test_worker_dies(capsys, wait_for_outputs):

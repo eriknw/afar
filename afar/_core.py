@@ -20,7 +20,10 @@ from ._where import find_where
 
 class Run:
     _gather_data = False
-    # Used to update outputs asynchronously
+    # Used to update outputs asynchronously: key -> [ipywidgets.Output or None, whether it
+    # shows output yet].  `_setup_print` adds an entry when a remote context is submitted;
+    # `_handle_print` removes it on "finish" or "display_expr", and `_handle_done` when the task
+    # failed without reporting it (cancelled, the worker died, or an input failed).
     _outputs = {}
     # Futures of remote contexts that have not finished; see `_run`
     _running = set()
@@ -289,7 +292,8 @@ class Run:
 
     @classmethod
     def _handle_print(cls, event):
-        # XXX: can we assume all messages from a single task arrive in FIFO order?
+        # This relies on the events of one task arriving in the order they were sent; they
+        # travel through the same batched streams (worker to scheduler, scheduler to client).
         _, msg = event
         key, action, payload = msg
         entry = cls._outputs.get(key)
@@ -324,7 +328,14 @@ class Run:
 
     @classmethod
     def _handle_done(cls, key, future):
-        cls._running.discard(future)
+        try:
+            cls._report_unfinished(key, future)
+        finally:
+            # Last, so that whoever waits for `_running` to empty also sees what was reported
+            cls._running.discard(future)
+
+    @classmethod
+    def _report_unfinished(cls, key, future):
         # A task that is cancelled, whose worker dies, or whose inputs failed never sends
         # "finish", so stop waiting for it.  When `run_afar` itself raised, it already sent the
         # error as "stderr" and will send "finish"; popping here could drop that "stderr".
