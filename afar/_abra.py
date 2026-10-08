@@ -14,7 +14,8 @@ from ._utils import is_ipython
 
 
 class _AssignedNames(ast.NodeVisitor):
-    """Collect the names a block of statements binds, in the order they are bound.
+    """Collect the names a block of statements binds, in source order (and in evaluation
+    order within a statement), forgetting names that are deleted.
 
     Nested scopes (functions, lambdas, classes, and comprehensions) bind names of their own,
     so only their names (for functions and classes) and the parts evaluated in the enclosing
@@ -27,6 +28,8 @@ class _AssignedNames(ast.NodeVisitor):
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Store):
             self.names.append(node.id)
+        elif isinstance(node.ctx, ast.Del):
+            self.names = [name for name in self.names if name != node.id]
 
     def visit_Assign(self, node):
         self.visit(node.value)

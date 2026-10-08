@@ -36,7 +36,11 @@ def last_name(source):
         ("for i in range(3):\n    pass", "i"),
         ("with open(f) as fh:\n    pass", "fh"),
         ("if c:\n    x = 1\nelse:\n    y = 2", "y"),
-        ("x = 1\ndel x", "x"),
+        ("x = 1\ndel x", None),
+        ("x = 1\ny = 2\ndel y", "x"),
+        ("x = 1\ndel x\nx = 2", "x"),
+        ("x = y = 1\ndel x, d[y]", "y"),
+        ("for item in range(3):\n    total = item\ndel item", "total"),
         ("pass", None),
         ("print(1)", None),
         # Python 3.12+ inlines comprehensions (PEP 709); the iteration variable is not a result
