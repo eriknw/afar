@@ -1,6 +1,7 @@
 """Define the user-facing `run` object; this is where it all comes together."""
 
 import sys
+import traceback
 from functools import partial
 from inspect import currentframe
 from uuid import uuid4
@@ -375,6 +376,12 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key, ret
             if pretty_repr is not None:
                 worker.log_event(channel, (unique_key, "display_expr", pretty_repr))
                 send_finish = False
+    except BaseException:
+        # Show the error where the context's output goes; a context that brings back no names
+        # has no future whose `result()` would raise it.
+        if capture_print and worker is not None:
+            worker.log_event(channel, (unique_key, "stderr", traceback.format_exc()))
+        raise
     finally:
         if capture_print and worker is not None and send_finish:
             worker.log_event(channel, (unique_key, "finish", None))

@@ -111,6 +111,18 @@ def test_remote_name_not_assigned(client):
         results["x"].result()
 
 
+def test_remote_error_is_shown(client, capsys, wait_for_outputs):
+    # Nothing is brought back, so no future would raise the error; it must be shown anyway
+    with afar.run as results, afar.remotely:
+        print("about to fail")
+        1 / 0
+    assert results == {}
+    wait_for_outputs()
+    captured = capsys.readouterr()
+    assert captured.out == "about to fail\n"
+    assert "ZeroDivisionError" in captured.err
+
+
 def test_remote_error(client):
     with afar.run as results, afar.remotely:
         x = 1 / 0
