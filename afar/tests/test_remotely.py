@@ -45,7 +45,7 @@ def test_innerscope_method(client, pytestconfig):
 
         method = remote_innerscope.cfg.default_method
     assert results["method"] == innerscope.cfg.default_method
-    expected = pytestconfig.getoption("--innerscope-method")
+    expected = pytestconfig.getoption("--innerscope-method", default=None)
     if expected is not None:
         assert results["method"] == expected
 

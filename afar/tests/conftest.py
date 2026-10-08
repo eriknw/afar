@@ -12,7 +12,7 @@ def set_innerscope_method(method):
 
 
 def pytest_configure(config):
-    method = config.getoption("--innerscope-method")
+    method = config.getoption("--innerscope-method", default=None)
     if method is not None:
         set_innerscope_method(method)
 
@@ -22,7 +22,7 @@ def client(pytestconfig):
     from dask.distributed import Client
 
     with Client(n_workers=2, threads_per_worker=1, dashboard_address=":0") as client:
-        method = pytestconfig.getoption("--innerscope-method")
+        method = pytestconfig.getoption("--innerscope-method", default=None)
         if method is not None:
             client.run(set_innerscope_method, method)
         yield client
