@@ -54,12 +54,28 @@ def find_with_start(lines, lineno):
     While a context manager's ``__enter__`` runs, the caller's line number may point to any
     line of a multi-line ``with`` statement, so search backwards from there.
     """
-    index = min(lineno, len(lines)) - 1
+    target = min(lineno, len(lines)) - 1
+    index = target
     while index >= 0:
-        if _WITH_START.match(lines[index]):
+        if _WITH_START.match(lines[index]) and _statement_reaches(lines, index, target):
             return index
         index -= 1
     raise RuntimeError("Failed to analyze the context!")
+
+
+def _statement_reaches(lines, start, target):
+    """Whether the logical line that begins at ``lines[start]`` continues to ``lines[target]``.
+
+    A line in a multi-line string may also begin with "with", but the statement we want is
+    still going at the line that is executing.
+    """
+    try:
+        for tok in tokenize.generate_tokens(iter(lines[start:]).__next__):
+            if tok.type == tokenize.NEWLINE:
+                return start + tok.start[0] - 1 >= target
+    except (SyntaxError, tokenize.TokenError):
+        pass
+    return False
 
 
 def analyze_with(lines, with_start):

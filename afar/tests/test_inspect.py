@@ -144,3 +144,11 @@ def test_find_with_start():
     assert find_with_start(lines, 3) == 0
     with pytest.raises(RuntimeError, match="Failed to analyze"):
         find_with_start(["x = 1\n", "y = 2\n"], 2)
+
+
+def test_find_with_start_skips_string_lines():
+    # Since Python 3.12, the line number points at the item being entered, here line 6
+    lines = lines_of('with (\n    f("""\nwith\n""") as g,\n    run,\n    later,\n):\n    x = 1\n')
+    assert lines[2] == "with\n"
+    assert find_with_start(lines, 6) == 0
+    assert find_with_start(lines, 2) == 0

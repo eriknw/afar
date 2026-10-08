@@ -147,3 +147,19 @@ def test_failed_context_leaves_no_state():
     with afar.run as results, locally:
         y = 2
     assert results == {"y": 2}
+
+
+def test_header_with_string_line_starting_with_with():
+    # Since Python 3.12, the line number while `afar.run` enters is the line of `afar.run`;
+    # searching back from it passes a line of the string that begins with "with"
+    import contextlib
+
+    with (
+        contextlib.nullcontext("""
+with
+"""),
+        afar.run as results,
+        locally,
+    ):
+        x = 1
+    assert results == {"x": 1}
