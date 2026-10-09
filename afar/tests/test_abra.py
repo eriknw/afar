@@ -52,6 +52,11 @@ def last_name(source):
         ("y = {k: v for k, v in d.items()}", "y"),
         ("y = sum(i for i in range(3))", "y"),
         ("[i for i in range(3)]", None),
+        # A walrus in a comprehension binds in the enclosing scope (PEP 572), even when nested
+        ("x = 1\nany((hit := v) > 1 for v in x)", "hit"),
+        ("x = 1\n[[(last := j) for j in row] for row in x]", "last"),
+        ("y = [(last := i) for i in range(3)]", "y"),
+        ("x = 1\n[lambda: (w := 1) for i in range(3)]", "x"),
         ("f = lambda q=1: (r := q)", "f"),
         # The name of an exception is deleted at the end of the handler
         ("try:\n    x = 1\nexcept Exception as e:\n    pass", "x"),
@@ -95,6 +100,13 @@ def test_default_names_skip_comprehension_variable():
     with afar.run as results, afar.locally:
         y = [i for i in range(3)]
     assert results == {"y": [0, 1, 2]}
+
+
+def test_default_names_walrus_in_comprehension():
+    with afar.run as results, afar.locally:
+        values = [1, 2, 3]
+        any((hit := v) > 1 for v in values)
+    assert results == {"hit": 2}
 
 
 def test_default_names_skip_exception_name():

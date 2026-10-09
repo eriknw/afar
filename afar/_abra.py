@@ -96,8 +96,12 @@ class _AssignedNames(ast.NodeVisitor):
         self.names.append(node.name)
 
     def _visit_comprehension(self, node):
-        # Only the first iterable is evaluated in the enclosing scope
+        # Only the first iterable is evaluated in the enclosing scope, but a walrus in a
+        # comprehension binds its name there too (PEP 572)
         self.visit(node.generators[0].iter)
+        walrus = _WalrusNames()
+        walrus.visit(node)
+        self.names.extend(walrus.names)
 
     visit_ListComp = visit_SetComp = visit_DictComp = visit_GeneratorExp = _visit_comprehension
 
@@ -109,6 +113,21 @@ class _AssignedNames(ast.NodeVisitor):
             self.names.append(name)
 
     visit_MatchAs = visit_MatchStar = visit_MatchMapping = _visit_capture
+
+
+class _WalrusNames(ast.NodeVisitor):
+    """Collect the names that walruses in a comprehension bind, which is in the enclosing scope"""
+
+    def __init__(self):
+        self.names = []
+
+    def visit_NamedExpr(self, node):
+        self.visit(node.value)
+        self.names.append(node.target.id)
+
+    def visit_Lambda(self, node):
+        # A walrus in a lambda binds in the lambda
+        pass
 
 
 def last_assigned_name(stmts):
