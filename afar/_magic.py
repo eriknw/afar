@@ -114,6 +114,7 @@ class AfarMagicBase(Magics):
             runner = opts.get("r", opts.get("run"))
             if runner not in local_ns:
                 raise UsageError(f"Variable name {runner!r} for -r or --run {not_found}")
+            runner = local_ns[runner]
             if not isinstance(runner, Run):
                 raise UsageError(f"-r or --run argument must be of type Run; got: {type(runner)}")
         elif "g" in opts or "get" in opts:

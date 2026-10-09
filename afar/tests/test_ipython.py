@@ -67,6 +67,15 @@ def test_time_magic(ip_afar):
     assert ip_afar.user_ns["results"] == {"t": 5}
 
 
+def test_run_option(ip_afar):
+    run_cell(ip_afar, "myrun = afar.run(data={'q': 5})\n")
+    run_cell(ip_afar, "%%afar -r myrun -w here x\nx = q + 1\n")
+    assert ip_afar.user_ns["x"] == 6
+    assert ip_afar.user_ns["myrun"].data == {"q": 5, "x": 6}
+    run_cell(ip_afar, "%%afar --run myrun -w here w\nw = x * 2\n")
+    assert ip_afar.user_ns["w"] == 12
+
+
 def test_new_magic(ip_afar):
     from afar._magic import new_magic
 
@@ -80,6 +89,7 @@ def test_new_magic(ip_afar):
     ("cell", "match"),
     [
         ("%%afar -r not_defined\nx = 1\n", "not found in local namespace"),
+        ("%%afar -r not_a_where\nx = 1\n", "must be of type Run"),
         ("%%afar -w not_defined\nx = 1\n", "not found in local namespace"),
         ("%%afar -w here -w here\nx = 1\n", "-w may not be given more than once"),
         ("%%afar -w here --where here\nx = 1\n", "may not be used at the same time"),
