@@ -1,5 +1,8 @@
+import importlib.util
 import pickle
+import textwrap
 
+import pytest
 from pytest import raises
 
 import afar
@@ -226,14 +229,23 @@ def test_nested_same_run():
     assert y == 2
 
 
-# Keep these last: the context body of `end_of_file` must end the file
-def test_end_of_file():
-    data = {}
-    end_of_file(data)
+@pytest.mark.parametrize("final_newline", ["\n", ""])
+@pytest.mark.parametrize("scope", ["module", "function"])
+def test_end_of_file(tmp_path, scope, final_newline):
+    # The context body is the end of the file, with or without a final newline
+    body = "with afar.run(data=data), afar.locally:\n    x = 10\n    y = 2 * x"
+    if scope == "function":
+        source = "import afar\n\ndef f(data):\n" + textwrap.indent(body, "    ")
+    else:
+        source = "import afar\n\ndata = {}\n" + body
+    path = tmp_path / f"afar_eof_{scope}_{len(final_newline)}.py"
+    path.write_text(source + final_newline)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if scope == "function":
+        data = {}
+        module.f(data)
+    else:
+        data = module.data
     assert data == {"y": 20}
-
-
-def end_of_file(data):
-    with afar.run(data=data), locally:
-        x = 10
-        y = 2 * x
