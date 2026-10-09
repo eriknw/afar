@@ -39,7 +39,8 @@ class Run:
         # If we do this, we shouldn't keep data around.
         self._is_singleton = data is None
         # What `__enter__` found, for `__exit__`.  Per thread, so that threads may share a `Run`
-        # such as the singleton.
+        # such as the singleton, and a stack, since a context that runs here (as with a second
+        # context manager that is not a location) may use the same `Run` again.
         self._entered = threading.local()
         # Used to cancel work
         self._client_to_futures = WeakKeyDictionary()
@@ -76,20 +77,22 @@ class Run:
         # The singleton does not keep data: each context gets its own
         data = {} if self._is_singleton else self.data
         # Keep state only once the context can run, so a failed `__enter__` leaves none behind
-        self._entered.state = (frame, lines[body_start:body_end], data)
+        stack = getattr(self._entered, "stack", None)
+        if stack is None:
+            stack = self._entered.stack = []
+        stack.append((frame, lines[body_start:body_end], data))
         self._body_start = body_start
         self._body_end = body_end
         return data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self._where = None
-        state = getattr(self._entered, "state", None)
-        self._entered.state = None
-        if state is None:
+        stack = getattr(self._entered, "stack", None)
+        if not stack:
             if exc_type is None:
-                raise RuntimeError("uh oh!")
+                raise RuntimeError(f"`{type(self).__name__}.__exit__` without `__enter__`")
             return False
-        frame, context_body, data = state
+        frame, context_body, data = stack.pop()
         where = None
         if exc_type is not None and exc_traceback.tb_frame is frame:
             where = find_where(exc_type, exc_value)

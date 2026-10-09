@@ -212,6 +212,20 @@ def test_threads_share_the_singleton():
     assert len(out_a) == len(out_b) == n
 
 
+def test_nested_same_run():
+    # The outer context runs here, since `nullcontext()` is not a location, so its body may use
+    # the same `Run` again
+    import contextlib
+
+    with afar.run as outer, contextlib.nullcontext():
+        with afar.run as inner, locally:
+            x = 1
+        y = 2
+    assert inner == {"x": 1}
+    assert outer == {}
+    assert y == 2
+
+
 # Keep these last: the context body of `end_of_file` must end the file
 def test_end_of_file():
     data = {}
