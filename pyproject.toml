@@ -1,9 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools >=77",
-    "setuptools-git-versioning",
-]
+requires = ["setuptools >=77", "setuptools-git-versioning"]
 
 [project]
 name = "afar"
@@ -15,46 +12,36 @@ requires-python = ">=3.10"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [
-    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
-    {name = "afar contributors"},
+  { name = "Erik Welch", email = "erik.n.welch@gmail.com" },
+  { name = "afar contributors" },
 ]
-maintainers = [
-    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
-]
-keywords = [
-    "dask",
-    "distributed",
-    "remote",
-    "context manager",
-    "ipython",
-    "jupyter",
-    "magic",
-]
+maintainers = [{ name = "Erik Welch", email = "erik.n.welch@gmail.com" }]
+keywords = ["dask", "distributed", "remote", "context manager", "ipython", "jupyter", "magic"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Framework :: IPython",
-    "Framework :: Jupyter",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3.15",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering",
-    "Topic :: System :: Distributed Computing",
+  "Development Status :: 4 - Beta",
+  "Framework :: IPython",
+  "Framework :: Jupyter",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Distributed Computing",
 ]
 dependencies = [
-    # The first release with Python 3.10 builds on conda-forge; tested in CI
-    "distributed >=2021.12.0",
-    # The first release that supports Python 3.13+
-    "innerscope >=0.8.0",
+  # The first release with Python 3.10 builds on conda-forge; tested in CI
+  "distributed >=2021.12.0",
+  # The first release that supports Python 3.13+
+  "innerscope >=0.8.0",
 ]
 
 [project.urls]
@@ -63,16 +50,10 @@ repository = "https://github.com/eriknw/afar"
 changelog = "https://github.com/eriknw/afar/releases"
 
 [project.optional-dependencies]
-test = [
-    "pytest >=7",
-    "ipython",
-]
+test = ["pytest >=7", "ipython"]
 
 [tool.setuptools.packages.find]
-include = [
-    "afar",
-    "afar.*",
-]
+include = ["afar", "afar.*"]
 namespaces = false
 
 [tool.setuptools-git-versioning]
@@ -99,14 +80,14 @@ minversion = "7.0"
 testpaths = ["afar/tests"]
 xfail_strict = true
 addopts = [
-    "--strict-config",  # Force error if config is misspelled
-    "--strict-markers",  # Force error if marker is misspelled (must be defined in config)
-    "-ra",  # Print summary of all fails/errors
+  "--strict-config",  # Force error if config is misspelled
+  "--strict-markers", # Force error if marker is misspelled (must be defined in config)
+  "-ra",              # Print summary of all fails/errors
 ]
 filterwarnings = [
-    "error",
-    # distributed <2022.2 imports distutils
-    "ignore:The distutils package is deprecated:DeprecationWarning",
+  "error",
+  # distributed <2022.2 imports distutils
+  "ignore:The distutils package is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
@@ -120,11 +101,7 @@ precision = 1
 fail_under = 0
 skip_covered = true
 skip_empty = true
-exclude_lines = [
-    "pragma: no cover",
-    "raise AssertionError",
-    "raise NotImplementedError",
-]
+exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError"]
 
 [tool.check-manifest]
 ignore = [".flake8", ".pre-commit-config.yaml"]
@@ -142,84 +119,96 @@ extend-exclude = ["afar/tests/test_notebook.ipynb"]
 
 [tool.ruff.lint]
 unfixable = [
-    "F841",  # unused-variable (Note: can leave useless expression)
-    "B905",  # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
+  "F841", # unused-variable (Note: can leave useless expression)
+  "B905", # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
 ]
-select = [
-    "ALL",
-]
+select = ["ALL"]
 external = [
-    # noqa codes that ruff doesn't know about: https://docs.astral.sh/ruff/settings/#lint_external
+  # noqa codes that ruff doesn't know about: https://docs.astral.sh/ruff/settings/#lint_external
 ]
 ignore = [
-    # Would be nice to fix these
-    "D",
+  # Would be nice to fix these
+  "D",
 
-    # Intentionally ignored
-    "COM812",  # Trailing comma missing
-    "CPY001",  # Missing copyright notice at top of file (Note: the LICENSE file covers it)
-    "N802",  # Function name ... should be lowercase
-    "N803",  # Argument name ... should be lowercase (Maybe okay--except in tests)
-    "N806",  # Variable ... in function should be lowercase
-    "N807",  # Function name should not start and end with `__`
-    "N815",  # Variable ... in class scope should not be mixedCase (Note: `ast.NodeVisitor` method names)
-    "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
-    "PERF203",  # `try`-`except` within a loop incurs performance overhead (Note: not since 3.11)
-    "PLC0415",  # `import` should be at top-level (Note: deferred imports keep IPython optional)
-    "PLR0911",  # Too many return statements
-    "PLR0912",  # Too many branches
-    "PLR0913",  # Too many arguments to function call
-    "PLR0915",  # Too many statements
-    "PLR0917",  # Too many positional arguments
-    "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
-    "PLW0603",  # Using the global statement to update ... is discouraged
-    "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
-    "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
-    "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
-    "RET504",  # Unnecessary variable assignment before `return` statement
-    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
-    "RUF021",  # parenthesize-chained-operators (Note: we know the precedence of `and` and `or`)
-    "S102",  # Use of `exec` detected (Note: afar compiles the context into a function)
-    "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
-    "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
-    "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
-    "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
-    "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
-    "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
+  # Intentionally ignored
+  "COM812",  # Trailing comma missing
+  "CPY001",  # Missing copyright notice at top of file (Note: the LICENSE file covers it)
+  "N802",    # Function name ... should be lowercase
+  "N803",    # Argument name ... should be lowercase (Maybe okay--except in tests)
+  "N806",    # Variable ... in function should be lowercase
+  "N807",    # Function name should not start and end with `__`
+  "N815",    # Variable ... in class scope should not be mixedCase (Note: `ast.NodeVisitor` method names)
+  "N818",    # Exception name ... should be named with an Error suffix (Note: good advice)
+  "PERF203", # `try`-`except` within a loop incurs performance overhead (Note: not since 3.11)
+  "PLC0415", # `import` should be at top-level (Note: deferred imports keep IPython optional)
+  "PLR0911", # Too many return statements
+  "PLR0912", # Too many branches
+  "PLR0913", # Too many arguments to function call
+  "PLR0915", # Too many statements
+  "PLR0917", # Too many positional arguments
+  "PLR2004", # Magic number used in comparison, consider replacing magic with a constant variable
+  "PLW0603", # Using the global statement to update ... is discouraged
+  "PLW2901", # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
+  "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
+  "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
+  "RET504",  # Unnecessary variable assignment before `return` statement
+  "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
+  "RUF021",  # parenthesize-chained-operators (Note: we know the precedence of `and` and `or`)
+  "S102",    # Use of `exec` detected (Note: afar compiles the context into a function)
+  "S110",    # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
+  "S112",    # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
+  "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
+  "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
+  "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+  "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
 
-    # Ignored categories
-    "C90",  # mccabe (Too strict, but maybe we should make things less complex)
-    "I",  # isort (Should we replace `isort` with this?)
-    "ANN",  # flake8-annotations (We don't use annotations yet)
-    "BLE",  # flake8-blind-except (Maybe consider)
-    "FBT",  # flake8-boolean-trap (Why?)
-    "DJ",  # flake8-django (We don't use django)
-    "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
-    "ICN",  # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
-    "PYI",  # flake8-pyi (We don't have stub files yet)
-    "SLF",  # flake8-self (We can use our own private variables, sheesh!)
-    "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
-    "TC",  # flake8-type-checking (Note: figure out type checking later)
-    "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
-    "TD",  # flake8-todos (Maybe okay to add some of these)
-    "FIX",  # flake8-fixme (like flake8-todos)
-    "ERA",  # eradicate (We like code in comments!)
-    "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
+  # Ignored categories
+  "C90", # mccabe (Too strict, but maybe we should make things less complex)
+  "I",   # isort (Should we replace `isort` with this?)
+  "ANN", # flake8-annotations (We don't use annotations yet)
+  "BLE", # flake8-blind-except (Maybe consider)
+  "FBT", # flake8-boolean-trap (Why?)
+  "DJ",  # flake8-django (We don't use django)
+  "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
+  "ICN", # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
+  "PYI", # flake8-pyi (We don't have stub files yet)
+  "SLF", # flake8-self (We can use our own private variables, sheesh!)
+  "TID", # flake8-tidy-imports (Rely on isort and our own judgement)
+  "TC",  # flake8-type-checking (Note: figure out type checking later)
+  "ARG", # flake8-unused-arguments (Sometimes helpful, but too strict)
+  "TD",  # flake8-todos (Maybe okay to add some of these)
+  "FIX", # flake8-fixme (like flake8-todos)
+  "ERA", # eradicate (We like code in comments!)
+  "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # Allow unused imports (w/o defining `__all__`)
+"__init__.py" = ["F401"] # Allow unused imports (w/o defining `__all__`)
 # Ruff-only codes live here, not in `noqa` comments, which yesqa (with flake8) would remove
-"afar/_core.py" = ["T201"]  # Print what remote contexts print
+"afar/_core.py" = ["T201"] # Print what remote contexts print
 "afar/_reprs.py" = ["T201"]
 "afar/_inspect.py" = ["TRY004"]
-"afar/_where.py" = ["B018"]  # Names evaluated on purpose to learn NameError's message
+"afar/_where.py" = ["B018"] # Names evaluated on purpose to learn NameError's message
 "afar/tests/*py" = [
-    "S101", "S301", "S603", "T201", "D103", "D100",  # Allow assert, print, pickle, subprocess, and no docstring
-    # afar tests are full of names that are only used remotely, or are undefined on purpose
-    "B018", "C416", "E701", "F821", "F841", "PLW0127", "PLW0128", "PT012", "RUF043", "SIM117",
-    "PT013",  # Allow `from pytest import raises`
-    "INP001",  # The tests directory is a package
+  "S101",
+  "S301",
+  "S603",
+  "T201",
+  "D103",
+  "D100", # Allow assert, print, pickle, subprocess, and no docstring
+  # afar tests are full of names that are only used remotely, or are undefined on purpose
+  "B018",
+  "C416",
+  "E701",
+  "F821",
+  "F841",
+  "PLW0127",
+  "PLW0128",
+  "PT012",
+  "RUF043",
+  "SIM117",
+  "PT013",   # Allow `from pytest import raises`
+  "INP001",  # The tests directory is a package
 ]
 
 [tool.ruff.lint.flake8-pytest-style]
