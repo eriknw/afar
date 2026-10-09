@@ -38,8 +38,9 @@ classifiers = [
   "Topic :: System :: Distributed Computing",
 ]
 dependencies = [
-  # The first release with Python 3.10 builds on conda-forge; tested in CI
-  "distributed >=2021.12.0",
+  # 2026.1.0 fixed a dashboard XSS that runs code in a Jupyter kernel (CVE-2026-23528), which
+  # afar's users are likely to meet; conda-forge has no 2026.1.0.  Tested in CI.
+  "distributed >=2026.1.1",
   # The first release that supports Python 3.13+
   "innerscope >=0.8.0",
 ]
@@ -50,7 +51,8 @@ repository = "https://github.com/eriknw/afar"
 changelog = "https://github.com/eriknw/afar/releases"
 
 [project.optional-dependencies]
-test = ["pytest >=7", "ipython"]
+# Floors past known advisories
+test = ["pytest >=9.0.3", "ipython >=8.10"]
 
 [tool.setuptools.packages.find]
 include = ["afar", "afar.*"]
@@ -76,7 +78,7 @@ known_first_party = "afar"
 line_length = 100
 
 [tool.pytest.ini_options]
-minversion = "7.0"
+minversion = "9.0"
 testpaths = ["afar/tests"]
 xfail_strict = true
 addopts = [
@@ -84,11 +86,7 @@ addopts = [
   "--strict-markers", # Force error if marker is misspelled (must be defined in config)
   "-ra",              # Print summary of all fails/errors
 ]
-filterwarnings = [
-  "error",
-  # distributed <2022.2 imports distutils
-  "ignore:The distutils package is deprecated:DeprecationWarning",
-]
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
