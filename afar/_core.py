@@ -1,6 +1,7 @@
 """Define the user-facing `run` object; this is where it all comes together."""
 
 import sys
+import threading
 import traceback
 from functools import partial
 from inspect import currentframe
@@ -37,7 +38,9 @@ class Run:
         # afar.run can be used as a singleton without calling it.
         # If we do this, we shouldn't keep data around.
         self._is_singleton = data is None
-        self._frame = None
+        # What `__enter__` found, for `__exit__`.  Per thread, so that threads may share a `Run`
+        # such as the singleton.
+        self._entered = threading.local()
         # Used to cancel work
         self._client_to_futures = WeakKeyDictionary()
         # For now, save the following to help debug
@@ -45,7 +48,6 @@ class Run:
         self._magic_func = None
         self._body_start = None
         self._body_end = None
-        self._lines = None
 
     def __call__(self, *names, client=None, data=None):
         if data is None:
@@ -59,9 +61,6 @@ class Run:
 
     def __enter__(self):
         frame = currentframe().f_back
-        if self._is_singleton and self.data:
-            raise RuntimeError("uh oh!")
-
         lines = get_lines(frame)
         with_start = find_with_start(lines, frame.f_lineno)
         num_with, body_start, body_end = analyze_with(lines, with_start)
@@ -74,50 +73,45 @@ class Run:
                 f"...     pass\n\n"
                 f"Please specify a location such as adding `, remotely`."
             )
+        # The singleton does not keep data: each context gets its own
+        data = {} if self._is_singleton else self.data
         # Keep state only once the context can run, so a failed `__enter__` leaves none behind
-        self._frame = frame
-        if self._is_singleton:
-            self.data = {}
+        self._entered.state = (frame, lines[body_start:body_end], data)
         self._body_start = body_start
         self._body_end = body_end
-        self._lines = lines
-        return self.data
+        return data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self._where = None
-        if self.data is None:
+        state = getattr(self._entered, "state", None)
+        self._entered.state = None
+        if state is None:
             if exc_type is None:
                 raise RuntimeError("uh oh!")
             return False
+        frame, context_body, data = state
         where = None
-        if exc_type is not None and exc_traceback.tb_frame is self._frame:
+        if exc_type is not None and exc_traceback.tb_frame is frame:
             where = find_where(exc_type, exc_value)
+        if where is None:
+            # No exception, or a real one: let it propagate
+            return False
         try:
-            if where is None:
-                # No exception, or a real one: let it propagate, but still reset the state
-                return False
-            return self._exit(where)
+            return self._exit(where, frame, context_body, data)
         except KeyboardInterrupt as exc:
             # Cancel all pending tasks
-            if self._where == "remotely":
+            if where.where == "remotely":
                 self.cancel()
             raise exc from None
         except Exception as exc:
             raise exc from None
-        finally:
-            self._frame = None
-            self._lines = None
-            if self._is_singleton:
-                self.data = None
 
-    def _exit(self, where):
-        frame = self._frame
-        context_body = self._lines[self._body_start : self._body_end]
+    def _exit(self, where, frame, context_body, data):
         self._run(
             where.where,
             context_body,
             self.names,
-            self.data,
+            data,
             client=self.client or where.client,
             submit_kwargs=where.submit_kwargs,
             global_ns=frame.f_globals,
@@ -145,10 +139,10 @@ class Run:
         if submit_kwargs is None:
             submit_kwargs = {}
 
-        self._magic_func, names, futures = cadabra(
-            context_body, where, names, data, global_ns, local_ns
-        )
-        display_expr = self._magic_func._display_expr
+        magic_func, names, futures = cadabra(context_body, where, names, data, global_ns, local_ns)
+        # Only to help debug: another thread may replace it while this one still runs
+        self._magic_func = magic_func
+        display_expr = magic_func._display_expr
         return_future = None
 
         if where == "remotely":
@@ -159,20 +153,16 @@ class Run:
                         "No dask.distributed client found.  "
                         "You must create and connect to a Dask cluster before using afar."
                     )
-            if client not in self._client_to_futures:
-                weak_futures = WeakSet()
-                self._client_to_futures[client] = weak_futures
-            else:
-                weak_futures = self._client_to_futures[client]
+            weak_futures = self._client_to_futures.setdefault(client, WeakSet())
 
-            to_scatter = data.keys() & self._magic_func._scoped.outer_scope.keys()
+            to_scatter = data.keys() & magic_func._scoped.outer_scope.keys()
             if to_scatter:
                 # Scatter value in `data` that we need in this calculation.
                 # This moves data from local to remote, then keeps it remote.
                 # Things in `data` may get reused, so it can be helpful to
                 # move them.  We could move everything in `data`, but we
                 # only move the things we need.  We could also scatter everything
-                # in `self._magic_func._scoped.outer_scope`, but we can't reuse
+                # in `magic_func._scoped.outer_scope`, but we can't reuse
                 # them, because they may get modified locally.
                 to_scatter = list(to_scatter)
                 # I'm afraid to hash, because users may accidentally mutate things.
@@ -181,7 +171,7 @@ class Run:
                 futures.update(scattered)
                 data.update(scattered)
                 for key in to_scatter:
-                    del self._magic_func._scoped.outer_scope[key]
+                    del magic_func._scoped.outer_scope[key]
 
             capture_print = True
             if capture_print and self._channel not in client._event_handlers:
@@ -195,12 +185,12 @@ class Run:
                 unique_key = None
 
             # Scatter magic_func to avoid "Large object" UserWarning
-            magic_func = client.scatter(self._magic_func, hash=False)
-            weak_futures.add(magic_func)
+            magic_future = client.scatter(magic_func, hash=False)
+            weak_futures.add(magic_future)
 
             remote_dict = client.submit(
                 run_afar,
-                magic_func,
+                magic_future,
                 names,
                 futures,
                 capture_print,
@@ -215,7 +205,7 @@ class Run:
             # cancels it if no futures depend on it, as when a context only prints.)
             self._running.add(remote_dict)
             remote_dict.add_done_callback(partial(self._handle_done, unique_key))
-            magic_func.release()  # Let go ASAP
+            magic_future.release()  # Let go ASAP
 
             if self._gather_data:
                 futures_to_name = {
@@ -240,10 +230,10 @@ class Run:
                     return_future = return_future.result()
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
-            results = self._magic_func()
+            results = magic_func()
             data.update(get_names(results, names))
             if display_expr:
-                if results.return_value is not None and not self._magic_func._quiet:
+                if results.return_value is not None and not magic_func._quiet:
                     # As remotely (see `repr_afar`) and as IPython does, don't display None
                     from IPython.display import display
 
@@ -260,7 +250,7 @@ class Run:
         # f_locals is a write-through proxy whose `update` requires a dict.  The proxy also
         # writes to variables of enclosing functions, which a function may rebind only with
         # `nonlocal`, and then the body binds them too.  Leave the others alone.
-        inner_names = self._magic_func._scoped.inner_names
+        inner_names = magic_func._scoped.inner_names
         local_ns.update(
             {name: data[name] for name in names if name not in free_names or name in inner_names}
         )

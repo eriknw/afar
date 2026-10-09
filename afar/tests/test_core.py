@@ -112,18 +112,6 @@ def test_pickle():
     assert func._scoped.func.__code__.co_code == func2._scoped.func.__code__.co_code
 
 
-def test_end_of_file():
-    data = {}
-    end_of_file(data)
-    assert data == {"y": 20}
-
-
-def end_of_file(data):
-    with afar.run(data=data), locally:
-        x = 10
-        y = 2 * x
-
-
 def test_failed_context_leaves_no_state():
     # The singleton must recover from a context that fails before it runs: a one-line body
     # (`__enter__` raises), a typo in the location (`__exit__` sees a NameError), and a
@@ -176,3 +164,62 @@ def test_name_not_assigned():
     with raises(KeyError, match="'w' was not assigned in the afar context"):
         with afar.run("x", "w"), locally:
             x = 1
+
+
+def _context_a(n, out):
+    for _ in range(n):
+        try:
+            with afar.run as results, locally:
+                a = 1
+        except Exception as exc:
+            results = repr(exc)
+        out.append(results)
+
+
+def _context_b(n, out):
+    for _ in range(n):
+        try:
+            with afar.run as results, locally:
+                b = 2
+        except Exception as exc:
+            results = repr(exc)
+        out.append(results)
+
+
+def test_threads_share_the_singleton():
+    # What `__enter__` finds is kept per thread.  Switch threads often to mix them up.
+    import sys
+    import threading
+
+    n = 1000
+    out_a = []
+    out_b = []
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [
+            threading.Thread(target=_context_a, args=(n, out_a)),
+            threading.Thread(target=_context_b, args=(n, out_b)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(interval)
+    assert [r for r in out_a if r != {"a": 1}] == []
+    assert [r for r in out_b if r != {"b": 2}] == []
+    assert len(out_a) == len(out_b) == n
+
+
+# Keep these last: the context body of `end_of_file` must end the file
+def test_end_of_file():
+    data = {}
+    end_of_file(data)
+    assert data == {"y": 20}
+
+
+def end_of_file(data):
+    with afar.run(data=data), locally:
+        x = 10
+        y = 2 * x
