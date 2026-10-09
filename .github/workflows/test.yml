@@ -40,12 +40,12 @@ jobs:
           - "3.15t"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           # Use a release candidate of a Python version that has no final release yet
@@ -73,7 +73,7 @@ jobs:
       # act, which runs these workflows locally, sets ACT; GitHub does not.
       - name: Coveralls
         if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         with:
           file: coverage.xml
           flag-name: pip-${{ matrix.os }}-${{ matrix.python-version }}
@@ -100,12 +100,12 @@ jobs:
             versions: minimum
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v4
+        uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         with:
           miniforge-variant: Miniforge3
           miniforge-version: latest
@@ -137,7 +137,7 @@ jobs:
           python -m coverage report --show-missing
       - name: Coveralls
         if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         with:
           file: coverage.xml
           flag-name: conda-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.versions }}
@@ -150,6 +150,6 @@ jobs:
     steps:
       - name: Coveralls finished
         if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         with:
           parallel-finished: true
