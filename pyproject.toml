@@ -7,7 +7,7 @@ name = "afar"
 dynamic = ["version"]
 description = "Run code on a Dask cluster via a context manager or IPython magic"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # PEP 639 expression; setuptools >=77 rejects it beside a "License ::" classifier.
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -24,7 +24,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -65,7 +64,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312", "py313", "py314", "py315"]
+target-version = ["py311", "py312", "py313", "py314", "py315"]
 extend-exclude = "test_notebook.ipynb"
 
 [tool.isort]
@@ -111,7 +110,7 @@ ignore-words-list = "thirdparty"
 [tool.ruff]
 # https://docs.astral.sh/ruff/
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 # The notebook test is executed by nbconvert in CI, not linted
 extend-exclude = ["afar/tests/test_notebook.ipynb"]
 

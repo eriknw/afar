@@ -30,7 +30,6 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         python-version:
-          - "3.10"
           - "3.11"
           - "3.12"
           - "3.13"
@@ -91,12 +90,10 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        # conda-forge builds its noarch packages, innerscope among them, for Python 3.11 and
-        # later, so the pip job alone tests 3.10.
         python-version: ["3.11", "3.15"]
         versions: ["latest"]
         include:
-          # The floors in pyproject.toml, on the oldest Python conda-forge can install them on
+          # The floors in pyproject.toml
           - os: ubuntu-latest
             python-version: "3.11"
             versions: minimum
