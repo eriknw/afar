@@ -101,7 +101,7 @@ skip_empty = true
 exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError"]
 
 [tool.check-manifest]
-ignore = [".codecov.yml", ".flake8", ".pre-commit-config.yaml"]
+ignore = [".codecov.yml", ".flake8", ".pre-commit-config.yaml", ".yamllint.yaml"]
 
 [tool.codespell]
 # "THIRDPARTY" is an isort section name, not a misspelling.
