@@ -1,5 +1,8 @@
 import subprocess
 import sys
+import threading
+import time
+from concurrent.futures import CancelledError
 from operator import add
 
 import pytest
@@ -175,6 +178,49 @@ def test_cancel(client, wait_for_outputs):
     # The context never ran, so it never sent "finish"; this waits for afar to give up on it
     wait_for_outputs()
     assert future.status == "cancelled"
+
+
+def get_waits_in_thread(get, client):
+    """Enter a context of `get` in another thread, which waits until it is cancelled.
+
+    Returns the thread, the futures of its context's tasks, and a dict for what it raised.
+    """
+    outcome = {}
+
+    def target():
+        try:
+            # No worker has this resource, so the context waits until it is cancelled
+            with get, afar.remotely(resources={"unavailable": 1}):
+                x = 1
+        except Exception as exc:
+            outcome["raised"] = exc
+
+    # A daemon, so that a failing test cannot keep the test run waiting for it
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    # Wait until the context has submitted the task that brings back `x`
+    deadline = time.monotonic() + 10
+    while True:
+        assert time.monotonic() < deadline
+        try:
+            futures = list(get._client_to_futures.get(client, ()))
+        except RuntimeError:  # pragma: no cover (the thread added a future meanwhile)
+            continue
+        # (Not the scattered function, which afar releases at once)
+        tasks = [f for f in futures if str(f.key).startswith(("run_afar", "get_afar"))]
+        if len(tasks) == 2:
+            return thread, tasks, outcome
+        time.sleep(0.01)
+
+
+def test_get_raises_if_cancelled(client, wait_for_outputs):
+    get = afar.get()
+    thread, _, outcome = get_waits_in_thread(get, client)
+    get.cancel()
+    thread.join(10)
+    # Not a CancelledError as the value of `x`
+    assert isinstance(outcome.get("raised"), CancelledError), outcome
+    wait_for_outputs()
 
 
 def test_remote_in_function(client):

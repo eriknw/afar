@@ -217,6 +217,9 @@ class Run:
                 }
                 weak_futures.update(futures_to_name)
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
+                    if future.cancelled():
+                        # `as_completed` gives the error of a cancelled future as its result
+                        raise result
                     data[futures_to_name[future]] = result
             else:
                 for name in names:
