@@ -98,8 +98,9 @@ def test_create_func_display_expr(body, display, rv):
 
 def test_default_names_skip_comprehension_variable():
     with afar.run as results, afar.locally:
-        y = [i for i in range(3)]
-    assert results == {"y": [0, 1, 2]}
+        # Not `[i for i in ...]`, which pyupgrade rewrites to `[*...]`, with no `i` to skip
+        y = [10 * i for i in range(3)]
+    assert results == {"y": [0, 10, 20]}
 
 
 def test_default_names_walrus_in_comprehension():
