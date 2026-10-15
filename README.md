@@ -5,7 +5,7 @@
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/afar)](https://pypi.org/project/afar/)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/eriknw/afar/blob/main/LICENSE)
 [![Tests](https://github.com/eriknw/afar/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/eriknw/afar/actions)
-[![Coverage Status](https://coveralls.io/repos/eriknw/afar/badge.svg?branch=main)](https://coveralls.io/r/eriknw/afar)
+[![Coverage](https://codecov.io/gh/eriknw/afar/graph/badge.svg)](https://codecov.io/gh/eriknw/afar)
 
 > **_One man's magic is another man's engineering_**<br>
 > _Robert A. Heinlein_

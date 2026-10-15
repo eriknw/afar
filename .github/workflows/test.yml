@@ -70,13 +70,11 @@ jobs:
           python -m coverage xml
           python -m coverage report --show-missing
       # act, which runs these workflows locally, sets ACT; GitHub does not.
-      - name: Coveralls
+      - name: codecov
         if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          file: coverage.xml
-          flag-name: pip-${{ matrix.os }}-${{ matrix.python-version }}
-          parallel: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   conda:
     name: conda (${{ matrix.os }}, ${{ matrix.python-version }}, ${{ matrix.versions }} versions)
@@ -134,21 +132,8 @@ jobs:
         run: |
           python -m coverage xml
           python -m coverage report --show-missing
-      - name: Coveralls
+      - name: codecov
         if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          file: coverage.xml
-          flag-name: conda-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.versions }}
-          parallel: true
-
-  finish:
-    needs: [pip, conda]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Coveralls finished
-        if: ${{ !env.ACT }}
-        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
-        with:
-          parallel-finished: true
+          token: ${{ secrets.CODECOV_TOKEN }}
