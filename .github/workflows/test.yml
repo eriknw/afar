@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, for breakage from new releases of afar's dependencies; afar uses private APIs of
+  # distributed.  Mondays at 07:17 UTC.
+  schedule:
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
