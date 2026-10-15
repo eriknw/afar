@@ -134,3 +134,21 @@ def test_remote_semicolon(ip_afar, client, capsys, wait_for_outputs):
     assert ip_afar.user_ns["v"] == 43
     wait_for_outputs()
     assert capsys.readouterr().out == "hello\n"
+
+
+def test_interrupted_magic_cancels_its_context(ip_afar, client, monkeypatch, wait_for_outputs):
+    import dask.distributed
+
+    import afar
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    # No worker has this resource, so the context waits until it is cancelled
+    ip_afar.user_ns["unavailable"] = afar.remotely(resources={"unavailable": 1})
+    monkeypatch.setattr(dask.distributed, "as_completed", interrupted)
+    result = ip_afar.run_cell("%%afar -g -w unavailable x\nx = 1\n")
+    monkeypatch.undo()
+    assert isinstance(result.error_in_exec, KeyboardInterrupt)
+    # Times out unless the interrupted context was cancelled
+    wait_for_outputs()

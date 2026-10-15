@@ -5,10 +5,12 @@ import time
 from concurrent.futures import CancelledError
 from operator import add
 
+import dask.distributed
 import pytest
 from dask.distributed import Client, Future
 
 import afar
+from afar._core import Run
 
 # TODO: better testing infrastructure
 if __name__ == "__main__":
@@ -219,6 +221,39 @@ def test_get_raises_if_cancelled(client, wait_for_outputs):
     get.cancel()
     thread.join(10)
     # Not a CancelledError as the value of `x`
+    assert isinstance(outcome.get("raised"), CancelledError), outcome
+    wait_for_outputs()
+
+
+def test_interrupt_cancels_only_its_context(client, wait_for_outputs, monkeypatch):
+    get = afar.get()
+    thread, other_futures, outcome = get_waits_in_thread(get, client)
+    try:
+        running_before = set(Run._running)
+        as_completed = dask.distributed.as_completed
+
+        def interrupted(*args, **kwargs):
+            # Ctrl-C reaches only the main thread: here, while it waits for its own context
+            if threading.current_thread() is threading.main_thread():
+                raise KeyboardInterrupt
+            return as_completed(*args, **kwargs)  # pragma: no cover (the thread already waits)
+
+        monkeypatch.setattr(dask.distributed, "as_completed", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            with get, afar.remotely(resources={"unavailable": 1}):
+                y = 1
+        monkeypatch.undo()
+        # This context is cancelled...
+        deadline = time.monotonic() + 10
+        while set(Run._running) - running_before:
+            assert time.monotonic() < deadline, "the interrupted context was not cancelled"
+            time.sleep(0.01)
+        # ...and the other thread's context of the same Run still waits
+        assert [future.status for future in other_futures] == ["pending", "pending"]
+        assert thread.is_alive()
+    finally:
+        get.cancel()
+        thread.join(10)
     assert isinstance(outcome.get("raised"), CancelledError), outcome
     wait_for_outputs()
 

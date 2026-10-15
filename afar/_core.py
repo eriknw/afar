@@ -101,12 +101,7 @@ class Run:
             return False
         try:
             return self._exit(where, frame, context_body, data)
-        except KeyboardInterrupt as exc:
-            # Cancel all pending tasks
-            if where.where == "remotely":
-                self.cancel()
-            raise exc from None
-        except Exception as exc:
+        except (Exception, KeyboardInterrupt) as exc:
             raise exc from None
 
     def _exit(self, where, frame, context_body, data):
@@ -123,8 +118,23 @@ class Run:
         )
         return True
 
-    def _run(
+    def _run(self, *args, **kwargs):
+        # The tasks this context submits, so that Ctrl-C can cancel them
+        context_futures = []
+        try:
+            return self._run_context(context_futures, *args, **kwargs)
+        except KeyboardInterrupt:
+            # Ctrl-C reaches only the main thread, and stops what it was doing: this context, as
+            # it stops an interrupted `dask.compute`.  Other contexts of this Run, in other
+            # threads or earlier in this one, keep running; `Run.cancel` cancels them all.
+            pending = [future for future in context_futures if future.status == "pending"]
+            if pending:
+                pending[0].client.cancel(pending)
+            raise
+
+    def _run_context(
         self,
+        context_futures,
         where,
         context_body,
         names,
@@ -157,6 +167,10 @@ class Run:
                         "You must create and connect to a Dask cluster before using afar."
                     )
             weak_futures = self._client_to_futures.setdefault(client, WeakSet())
+
+            def track(future):
+                weak_futures.add(future)
+                context_futures.append(future)
 
             to_scatter = data.keys() & magic_func._scoped.outer_scope.keys()
             if to_scatter:
@@ -203,7 +217,7 @@ class Run:
                 pure=False,
                 **submit_kwargs,
             )
-            weak_futures.add(remote_dict)
+            track(remote_dict)
             # Hold `remote_dict` until it finishes, then let go.  (Calling `release` instead
             # cancels it if no futures depend on it, as when a context only prints.)
             self._running.add(remote_dict)
@@ -215,7 +229,8 @@ class Run:
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
-                weak_futures.update(futures_to_name)
+                for future in futures_to_name:
+                    track(future)
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
                     if future.cancelled():
                         # `as_completed` gives the error of a cancelled future as its result
@@ -224,14 +239,14 @@ class Run:
             else:
                 for name in names:
                     future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
-                    weak_futures.add(future)
+                    track(future)
                     data[name] = future
             if return_expr and display_expr:
                 # The line magic, as in `z = %afar x + y`, returns the final expression
                 return_future = client.submit(
                     get_afar, remote_dict, RETURN_VALUE_KEY, **submit_kwargs
                 )
-                weak_futures.add(return_future)
+                track(return_future)
                 if self._gather_data:
                     return_future = return_future.result()
         elif where == "locally":
@@ -263,7 +278,10 @@ class Run:
         return return_future
 
     def cancel(self, *, client=None, force=False):
-        """Cancel pending tasks"""
+        """Cancel the pending tasks of every context this Run started, in any thread
+
+        (Ctrl-C cancels only those of the context it interrupts.)
+        """
         if client is not None:
             items = [(client, self._client_to_futures[client])]
         else:
