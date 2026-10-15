@@ -136,6 +136,10 @@ repos:
     rev: v0.5.0
     hooks:
       - id: pysentry
+        # When they change, instead of at every commit, which fails offline; security.yml
+        # also runs this weekly
+        always_run: false
+        files: ^(pyproject\.toml|\.pre-commit-config\.yaml)$
         # Audit the floors in pyproject.toml.  Without `--direct-only`, pysentry resolves the
         # newest versions with uv (which the hook installs), and no longer sees a floor that
         # allows a vulnerable release.
