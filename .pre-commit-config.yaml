@@ -12,7 +12,8 @@ ci:
   # See: https://pre-commit.ci/#configuration
   autofix_prs: false
   autoupdate_schedule: quarterly
-  skip: [no-commit-to-branch]
+  # pre-commit.ci runs hooks without network access, which pysentry needs
+  skip: [no-commit-to-branch, pysentry]
 fail_fast: false
 default_language_version:
   python: python3
