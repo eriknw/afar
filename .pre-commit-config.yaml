@@ -1,0 +1,158 @@
+# https://pre-commit.com/
+#
+# Before first use: `pre-commit install`
+# To run: `pre-commit run --all-files`
+# To update: `pre-commit autoupdate`
+#  - &flake8_dependencies below needs updated manually
+# To ignore: `git commit --no-verify`
+#
+# Be careful about linting that rewrites code syntax we want to test: afar's tests are full
+# of names that are only used remotely, and of oddly formatted `with` statements.
+ci:
+  # See: https://pre-commit.ci/#configuration
+  autofix_prs: false
+  autoupdate_schedule: quarterly
+  # pre-commit.ci runs hooks without network access, which pysentry needs
+  skip: [no-commit-to-branch, pysentry]
+fail_fast: false
+default_language_version:
+  python: python3
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-illegal-windows-names
+      - id: check-merge-conflict
+      - id: check-ast
+      - id: check-toml
+      - id: check-yaml
+      - id: check-vcs-permalinks
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: forbid-submodules
+      - id: end-of-file-fixer
+        exclude_types: [svg]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: "0.26"
+    hooks:
+      - id: validate-pyproject
+        name: Validate pyproject.toml
+  # I don't yet trust ruff to do what autoflake does
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.4.0
+    hooks:
+      - id: autoflake
+        args: [--in-place]
+  - repo: https://github.com/pycqa/isort
+    rev: 9.0.2
+    hooks:
+      - id: isort
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.22.0
+    hooks:
+      - id: pyupgrade
+        args: [--py311-plus]
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.10.1
+    hooks:
+      - id: black
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.4.1
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          &flake8_dependencies # These versions need updated manually
+          - flake8==7.4.1
+          - flake8-bugbear==26.9.30
+          - flake8-comprehensions==3.17.0
+          - flake8-simplify==0.31.1
+  - repo: https://github.com/asottile/yesqa
+    rev: v1.5.0
+    hooks:
+      - id: yesqa
+        additional_dependencies: *flake8_dependencies
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        types_or: [python, markdown, toml, yaml]
+        additional_dependencies:
+          - tomli; python_version<'3.11'
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      - id: ruff-check
+  # `pyroma` may help keep our package standards up to date if best practices change.
+  # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
+  - repo: https://github.com/regebro/pyroma
+    rev: "5.1b1"
+    hooks:
+      - id: pyroma
+        args: [-n, "10", .]
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.10
+    hooks:
+      - id: prettier
+        args: [--prose-wrap=preserve]
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-no-eval
+      - id: python-no-log-warn
+      - id: text-unicode-replacement-char
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
+        args: ["--option", "column_width=100"]
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.2
+    hooks:
+      - id: check-dependabot
+      - id: check-github-workflows
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+  - repo: https://github.com/pysentry/pysentry-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: pysentry
+        # When they change, instead of at every commit, which fails offline; security.yml
+        # also runs this weekly
+        always_run: false
+        files: ^(pyproject\.toml|\.pre-commit-config\.yaml)$
+        # Audit the floors in pyproject.toml.  Without `--direct-only`, pysentry resolves the
+        # newest versions with uv (which the hook installs), and no longer sees a floor that
+        # allows a vulnerable release.
+        args:
+          - --format=human
+          - --fail-on=low
+          - --sources=pypa,osv,pypi
+          - --direct-only
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch # no commit directly to main

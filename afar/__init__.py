@@ -13,16 +13,25 @@ or to use an IPython magic:
 Read the documentation at https://github.com/eriknw/afar
 """
 
-from . import _utils
-from ._core import get, run  # noqa
-from ._version import get_versions
-from ._where import later, locally, remotely  # noqa
+import importlib.metadata
 
-__version__ = get_versions()["version"]
-del get_versions
+from . import _utils
+from ._core import get, run
+from ._where import later, locally, remotely
+
+try:
+    __version__ = importlib.metadata.version("afar")
+except Exception as exc:  # pragma: no cover (safety)
+    raise AttributeError(
+        "`afar.__version__` not available. This may mean "
+        "afar was incorrectly installed or not installed at all. "
+        "For local development, you may want to do an editable install via "
+        "`python -m pip install -e path/to/afar`"
+    ) from exc
+del importlib
 
 if _utils.is_ipython():
-    from ._magic import new_magic  # noqa
+    from ._magic import new_magic
 
 
 def load_ipython_extension(ip):

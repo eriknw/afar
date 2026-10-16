@@ -1,4 +1,5 @@
 """Define the IPython magic for using afar"""
+
 from textwrap import indent
 
 from dask.distributed import Client
@@ -92,6 +93,11 @@ class AfarMagicBase(Magics):
             strict=False,
             preserve_non_opts=True,
         )
+        for key, value in opts.items():
+            # IPython collects a repeated option into a list
+            if isinstance(value, list):
+                dashes = "-" if len(key) == 1 else "--"
+                raise UsageError(f"{dashes}{key} may not be given more than once")
         if "r" in opts and "run" in opts:
             raise UsageError("-r and --run options may not be used at the same time")
         if "d" in opts and "data" in opts:
@@ -108,6 +114,7 @@ class AfarMagicBase(Magics):
             runner = opts.get("r", opts.get("run"))
             if runner not in local_ns:
                 raise UsageError(f"Variable name {runner!r} for -r or --run {not_found}")
+            runner = local_ns[runner]
             if not isinstance(runner, Run):
                 raise UsageError(f"-r or --run argument must be of type Run; got: {type(runner)}")
         elif "g" in opts or "get" in opts:

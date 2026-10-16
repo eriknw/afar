@@ -41,7 +41,6 @@ later = Where("later")
 def find_where(exc_type, exc_value):
     if issubclass(exc_type, AfarException):
         return exc_value.args[0]
-    elif issubclass(exc_type, NameError) and exc_value.args[0] in _errors_to_locations:
+    if issubclass(exc_type, NameError) and exc_value.args[0] in _errors_to_locations:
         return globals()[_errors_to_locations[exc_value.args[0]]]
-    else:
-        return None
+    return None

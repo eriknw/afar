@@ -1,6 +1,9 @@
 """Define the user-facing `run` object; this is where it all comes together."""
-import dis
+
 import sys
+import threading
+import traceback
+from functools import partial
 from inspect import currentframe
 from uuid import uuid4
 from weakref import WeakKeyDictionary, WeakSet
@@ -9,7 +12,7 @@ from dask import distributed
 from dask.distributed import get_worker
 
 from ._abra import cadabra
-from ._inspect import get_body, get_body_start, get_lines
+from ._inspect import analyze_with, find_with_start, get_lines
 from ._printing import PrintRecorder
 from ._reprs import display_repr, repr_afar
 from ._utils import supports_async_output
@@ -18,8 +21,13 @@ from ._where import find_where
 
 class Run:
     _gather_data = False
-    # Used to update outputs asynchronously
+    # Used to update outputs asynchronously: key -> [ipywidgets.Output or None, whether it
+    # shows output yet].  `_setup_print` adds an entry when a remote context is submitted;
+    # `_handle_print` removes it on "finish" or "display_expr", and `_handle_done` when the task
+    # failed without reporting it (cancelled, the worker died, or an input failed).
     _outputs = {}
+    # Futures of remote contexts that have not finished; see `_run`
+    _running = set()
     _channel = "afar-" + uuid4().hex
 
     def __init__(self, *names, client=None, data=None):
@@ -30,14 +38,17 @@ class Run:
         # afar.run can be used as a singleton without calling it.
         # If we do this, we shouldn't keep data around.
         self._is_singleton = data is None
-        self._frame = None
+        # What `__enter__` found, for `__exit__`.  Per thread, so that threads may share a `Run`
+        # such as the singleton, and a stack, since a context that runs here (as with a second
+        # context manager that is not a location) may use the same `Run` again.
+        self._entered = threading.local()
         # Used to cancel work
         self._client_to_futures = WeakKeyDictionary()
         # For now, save the following to help debug
         self._where = None
         self._magic_func = None
         self._body_start = None
-        self._lines = None
+        self._body_end = None
 
     def __call__(self, *names, client=None, data=None):
         if data is None:
@@ -50,21 +61,10 @@ class Run:
         return type(self)(*names, client=client, data=data)
 
     def __enter__(self):
-        self._frame = currentframe().f_back
-        with_lineno = self._frame.f_lineno - 1
-        if self._is_singleton:
-            if self.data:
-                raise RuntimeError("uh oh!")
-            self.data = {}
-
-        lines = get_lines(self._frame)
-
-        while not lines[with_lineno].lstrip().startswith("with"):
-            with_lineno -= 1
-            if with_lineno < 0:
-                raise RuntimeError("Failed to analyze the context!")
-
-        num_with, body_start = get_body_start(lines, with_lineno)
+        frame = currentframe().f_back
+        lines = get_lines(frame)
+        with_start = find_with_start(lines, frame.f_lineno)
+        num_with, body_start, body_end = analyze_with(lines, with_start)
         if num_with < 2:
             # Best effort detection.  This fails if there is a context *before* afar.run
             within = type(self).__name__.lower()
@@ -74,66 +74,67 @@ class Run:
                 f"...     pass\n\n"
                 f"Please specify a location such as adding `, remotely`."
             )
+        # The singleton does not keep data: each context gets its own
+        data = {} if self._is_singleton else self.data
+        # Keep state only once the context can run, so a failed `__enter__` leaves none behind
+        stack = getattr(self._entered, "stack", None)
+        if stack is None:
+            stack = self._entered.stack = []
+        stack.append((frame, lines[body_start:body_end], data))
         self._body_start = body_start
-        self._lines = lines
-        return self.data
+        self._body_end = body_end
+        return data
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self._where = None
-        if self.data is None:
+        stack = getattr(self._entered, "stack", None)
+        if not stack:
             if exc_type is None:
-                raise RuntimeError("uh oh!")
+                raise RuntimeError(f"`{type(self).__name__}.__exit__` without `__enter__`")
             return False
-        if exc_type is None or exc_traceback.tb_frame is not self._frame:
-            return False
-        where = find_where(exc_type, exc_value)
+        frame, context_body, data = stack.pop()
+        where = None
+        if exc_type is not None and exc_traceback.tb_frame is frame:
+            where = find_where(exc_type, exc_value)
         if where is None:
-            # The exception is valid
+            # No exception, or a real one: let it propagate
             return False
-
         try:
-            return self._exit(where)
-        except KeyboardInterrupt as exc:
-            # Cancel all pending tasks
-            if self._where == "remotely":
-                self.cancel()
+            return self._exit(where, frame, context_body, data)
+        except (Exception, KeyboardInterrupt) as exc:
             raise exc from None
-        except Exception as exc:
-            raise exc from None
-        finally:
-            self._frame = None
-            self._lines = None
-            if self._is_singleton:
-                self.data = None
 
-    def _exit(self, where):
-        frame = self._frame
-        # What line does the context end?
-        maxline = self._body_start
-        for offset, line in dis.findlinestarts(frame.f_code):
-            if line > maxline:
-                maxline = line
-            if offset > frame.f_lasti:
-                endline = max(maxline, maxline - 1)
-                break
-        else:
-            endline = maxline + 5  # give us some wiggle room
-
-        context_body = get_body(self._lines[self._body_start : endline])
+    def _exit(self, where, frame, context_body, data):
         self._run(
             where.where,
             context_body,
             self.names,
-            self.data,
+            data,
             client=self.client or where.client,
             submit_kwargs=where.submit_kwargs,
             global_ns=frame.f_globals,
             local_ns=frame.f_locals,
+            free_names=frame.f_code.co_freevars,
         )
         return True
 
-    def _run(
+    def _run(self, *args, **kwargs):
+        # The tasks this context submits, so that Ctrl-C can cancel them
+        context_futures = []
+        try:
+            return self._run_context(context_futures, *args, **kwargs)
+        except KeyboardInterrupt:
+            # Ctrl-C reaches only the main thread, and stops what it was doing: this context, as
+            # it stops an interrupted `dask.compute`.  Other contexts of this Run, in other
+            # threads or earlier in this one, keep running; `Run.cancel` cancels them all.
+            pending = [future for future in context_futures if future.status == "pending"]
+            if pending:
+                pending[0].client.cancel(pending)
+            raise
+
+    def _run_context(
         self,
+        context_futures,
         where,
         context_body,
         names,
@@ -144,16 +145,17 @@ class Run:
         client=None,
         submit_kwargs=None,
         return_expr=False,
+        free_names=(),
     ):
         self._where = where
         self.context_body = context_body
         if submit_kwargs is None:
             submit_kwargs = {}
 
-        self._magic_func, names, futures = cadabra(
-            context_body, where, names, data, global_ns, local_ns
-        )
-        display_expr = self._magic_func._display_expr
+        magic_func, names, futures = cadabra(context_body, where, names, data, global_ns, local_ns)
+        # Only to help debug: another thread may replace it while this one still runs
+        self._magic_func = magic_func
+        display_expr = magic_func._display_expr
         return_future = None
 
         if where == "remotely":
@@ -164,29 +166,29 @@ class Run:
                         "No dask.distributed client found.  "
                         "You must create and connect to a Dask cluster before using afar."
                     )
-            if client not in self._client_to_futures:
-                weak_futures = WeakSet()
-                self._client_to_futures[client] = weak_futures
-            else:
-                weak_futures = self._client_to_futures[client]
+            weak_futures = self._client_to_futures.setdefault(client, WeakSet())
 
-            to_scatter = data.keys() & self._magic_func._scoped.outer_scope.keys()
+            def track(future):
+                weak_futures.add(future)
+                context_futures.append(future)
+
+            to_scatter = data.keys() & magic_func._scoped.outer_scope.keys()
             if to_scatter:
                 # Scatter value in `data` that we need in this calculation.
                 # This moves data from local to remote, then keeps it remote.
                 # Things in `data` may get reused, so it can be helpful to
                 # move them.  We could move everything in `data`, but we
                 # only move the things we need.  We could also scatter everything
-                # in `self._magic_func._scoped.outer_scope`, but we can't reuse
+                # in `magic_func._scoped.outer_scope`, but we can't reuse
                 # them, because they may get modified locally.
                 to_scatter = list(to_scatter)
                 # I'm afraid to hash, because users may accidentally mutate things.
                 scattered = client.scatter([data[key] for key in to_scatter], hash=False)
-                scattered = dict(zip(to_scatter, scattered))
+                scattered = dict(zip(to_scatter, scattered, strict=True))
                 futures.update(scattered)
                 data.update(scattered)
                 for key in to_scatter:
-                    del self._magic_func._scoped.outer_scope[key]
+                    del magic_func._scoped.outer_scope[key]
 
             capture_print = True
             if capture_print and self._channel not in client._event_handlers:
@@ -200,47 +202,63 @@ class Run:
                 unique_key = None
 
             # Scatter magic_func to avoid "Large object" UserWarning
-            magic_func = client.scatter(self._magic_func, hash=False)
-            weak_futures.add(magic_func)
+            magic_future = client.scatter(magic_func, hash=False)
+            weak_futures.add(magic_future)
 
             remote_dict = client.submit(
                 run_afar,
-                magic_func,
+                magic_future,
                 names,
                 futures,
                 capture_print,
                 self._channel,
                 unique_key,
+                return_expr and display_expr,
                 pure=False,
                 **submit_kwargs,
             )
-            weak_futures.add(remote_dict)
-            magic_func.release()  # Let go ASAP
+            track(remote_dict)
+            # Hold `remote_dict` until it finishes, then let go.  (Calling `release` instead
+            # cancels it if no futures depend on it, as when a context only prints.)
+            self._running.add(remote_dict)
+            remote_dict.add_done_callback(partial(self._handle_done, unique_key))
+            magic_future.release()  # Let go ASAP
 
             if self._gather_data:
                 futures_to_name = {
                     client.submit(get_afar, remote_dict, name, **submit_kwargs): name
                     for name in names
                 }
-                weak_futures.update(futures_to_name)
-                remote_dict.release()  # Let go ASAP
+                for future in futures_to_name:
+                    track(future)
                 for future, result in distributed.as_completed(futures_to_name, with_results=True):
+                    if future.cancelled():
+                        # `as_completed` gives the error of a cancelled future as its result
+                        raise result
                     data[futures_to_name[future]] = result
             else:
                 for name in names:
                     future = client.submit(get_afar, remote_dict, name, **submit_kwargs)
-                    weak_futures.add(future)
+                    track(future)
                     data[name] = future
-                remote_dict.release()  # Let go ASAP
+            if return_expr and display_expr:
+                # The line magic, as in `z = %afar x + y`, returns the final expression
+                return_future = client.submit(
+                    get_afar, remote_dict, RETURN_VALUE_KEY, **submit_kwargs
+                )
+                track(return_future)
+                if self._gather_data:
+                    return_future = return_future.result()
         elif where == "locally":
             # Run locally.  This is handy for testing and debugging.
-            results = self._magic_func()
-            for name in names:
-                data[name] = results[name]
+            results = magic_func()
+            data.update(get_names(results, names))
             if display_expr:
-                from IPython.dislpay import display
+                if results.return_value is not None and not magic_func._quiet:
+                    # As remotely (see `repr_afar`) and as IPython does, don't display None
+                    from IPython.display import display
 
-                display(results.return_value)
+                    display(results.return_value)
                 if return_expr:
                     return_future = results.return_value
         elif where == "later":
@@ -248,19 +266,28 @@ class Run:
         else:
             raise ValueError(f"Don't know where {where!r} is")
 
-        # Try to update the variables in the frame.
-        # This currently only works if f_locals is f_globals, or if tracing (don't ask).
-        local_ns.update((name, data[name]) for name in names)
+        # Try to update the variables in the frame.  This works if f_locals is f_globals
+        # (module scope and IPython), or in functions since Python 3.13 (PEP 667), where
+        # f_locals is a write-through proxy whose `update` requires a dict.  The proxy also
+        # writes to variables of enclosing functions, which a function may rebind only with
+        # `nonlocal`, and then the body binds them too.  Leave the others alone.
+        inner_names = magic_func._scoped.inner_names
+        local_ns.update(
+            {name: data[name] for name in names if name not in free_names or name in inner_names}
+        )
         return return_future
 
     def cancel(self, *, client=None, force=False):
-        """Cancel pending tasks"""
+        """Cancel the pending tasks of every context this Run started, in any thread
+
+        (Ctrl-C cancels only those of the context it interrupts.)
+        """
         if client is not None:
             items = [(client, self._client_to_futures[client])]
         else:
             items = self._client_to_futures.items()
-        for client, weak_futures in items:
-            client.cancel(
+        for cur_client, weak_futures in items:
+            cur_client.cancel(
                 [future for future in weak_futures if future.status == "pending"], force=force
             )
             weak_futures.clear()
@@ -279,23 +306,25 @@ class Run:
 
     @classmethod
     def _handle_print(cls, event):
-        # XXX: can we assume all messages from a single task arrive in FIFO order?
+        # This relies on the events of one task arriving in the order they were sent; they
+        # travel through the same batched streams (worker to scheduler, scheduler to client).
         _, msg = event
         key, action, payload = msg
-        if key not in cls._outputs:
+        entry = cls._outputs.get(key)
+        if entry is None:
             return
-        out, is_updated = cls._outputs[key]
+        out, is_updated = entry
         if out is not None:
             if action == "begin":
                 if is_updated:
                     out.outputs = type(out.outputs)()
                     out.append_stdout("\N{SPARKLES} Running afar... (restarted) \N{SPARKLES}")
-                    cls._outputs[key][1] = False  # is not updated
+                    entry[1] = False  # is not updated
             else:
                 if not is_updated:
                     # Clear the "Running afar..." message
                     out.outputs = type(out.outputs)()
-                    cls._outputs[key][1] = True  # is updated
+                    entry[1] = True  # is updated
                 # ipywidgets.Output is pretty slow if there are lots of messages
                 if action == "stdout":
                     out.append_stdout(payload)
@@ -307,9 +336,44 @@ class Run:
             print(payload, end="", file=sys.stderr)
         if action == "display_expr":
             display_repr(payload, out=out)
-            del cls._outputs[key]
+            cls._outputs.pop(key, None)
         elif action == "finish":
-            del cls._outputs[key]
+            cls._outputs.pop(key, None)
+
+    @classmethod
+    def _handle_done(cls, key, future):
+        try:
+            cls._report_unfinished(key, future)
+        finally:
+            # Last, so that whoever waits for `_running` to empty also sees what was reported
+            cls._running.discard(future)
+
+    @classmethod
+    def _report_unfinished(cls, key, future):
+        # A task that is cancelled, whose worker dies, or whose inputs failed never sends
+        # "finish", so stop waiting for it.  When `run_afar` itself raised, it already sent the
+        # error as "stderr" and will send "finish"; popping here could drop that "stderr".
+        if future.status == "cancelled":
+            message = None
+        elif future.status == "error":
+            try:
+                exc = future.exception()
+            except Exception:  # pragma: no cover (safety, as when the client is closing)
+                return
+            if getattr(exc, "_afar_reported_by", None) == key:
+                return
+            message = f"afar failed: {exc!r}\n"
+        else:
+            return
+        entry = cls._outputs.pop(key, None)
+        if entry is None:
+            return
+        out = entry[0]
+        if out is not None:
+            out.outputs = type(out.outputs)()
+            out.append_stderr(message or "afar was cancelled\n")
+        elif message is not None:
+            print(message, end="", file=sys.stderr)
 
 
 class Get(Run):
@@ -318,13 +382,15 @@ class Get(Run):
     _gather_data = True
 
 
-def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
+def run_afar(magic_func, names, futures, capture_print, channel, unique_key, return_expr=False):
+    worker = None
+    send_finish = False
     if capture_print:
         try:
             worker = get_worker()
             send_finish = True
         except ValueError:
-            worker = None
+            pass
     try:
         if capture_print and worker is not None:
             worker.log_event(channel, (unique_key, "begin", None))
@@ -339,9 +405,13 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
             sfunc = magic_func._scoped.bind(futures)
             results = sfunc()
 
-        rv = {key: results[key] for key in names}
+        rv = get_names(results, names)
+        if return_expr:
+            rv[RETURN_VALUE_KEY] = results.return_value
 
-        if magic_func._display_expr and worker is not None:
+        # `getattr`: a MagicFunction pickled by an afar before `_quiet` existed has none
+        quiet = getattr(magic_func, "_quiet", False)
+        if magic_func._display_expr and not quiet and worker is not None:
             # Hopefully computing the repr is fast.  If it is slow, perhaps it would be
             # better to add the return value to rv and call repr_afar as a separate task.
             # Also, pretty_repr must be msgpack serializable if done via events.  Hence,
@@ -350,10 +420,41 @@ def run_afar(magic_func, names, futures, capture_print, channel, unique_key):
             if pretty_repr is not None:
                 worker.log_event(channel, (unique_key, "display_expr", pretty_repr))
                 send_finish = False
+    except BaseException as exc:
+        # Show the error where the context's output goes; a context that brings back no names
+        # has no future whose `result()` would raise it.
+        if capture_print and worker is not None:
+            worker.log_event(channel, (unique_key, "stderr", traceback.format_exc()))
+            try:
+                # Tell `Run._handle_done` that this context reported its own error
+                exc._afar_reported_by = unique_key
+            except Exception:  # pragma: no cover (exceptions that refuse attributes)
+                pass
+        raise
     finally:
         if capture_print and worker is not None and send_finish:
             worker.log_event(channel, (unique_key, "finish", None))
     return rv
+
+
+def get_names(results, names):
+    """The values of `names` in the inner scope, with a helpful error if one was not assigned"""
+    rv = {}
+    for name in names:
+        try:
+            rv[name] = results[name]
+        except KeyError:
+            raise KeyError(
+                f"{name!r} was not assigned in the afar context, so it cannot be brought back.  "
+                "Without names, as in `with afar.run, remotely:`, afar brings back the last "
+                "name the context assigns; to choose names, give them to `afar.run`, as in "
+                "`with afar.run('a', 'b'), remotely:`"
+            ) from None
+    return rv
+
+
+# Not a valid identifier, so it cannot be the name of a variable
+RETURN_VALUE_KEY = "afar return value"
 
 
 def get_afar(d, k):
